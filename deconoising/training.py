@@ -244,20 +244,24 @@ def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augm
     
     return samples, labels, masks, dataCounter
 
-def lossFunction(samples, labels, masks, std, psf, regularization, positivity_constraint):
-    psf_shape = psf.shape[2]
+def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint):
+    psf_shape = psf_list[0].shape[2]
     pad_size = (psf_shape - 1)//2
-    assert psf.shape[2] == psf.shape[3]
+    assert psf_list[0].shape[2] == psf_list[0].shape[3]
     rs=torch.mean(samples,dim=0).reshape(samples.shape[1],1,samples.shape[2],samples.shape[3])
     # we pad the result
-    rs=torch.nn.functional.pad(rs,(pad_size, pad_size, pad_size, pad_size),mode='reflect')
+    # TODO: check the padding. I don't think one needs to pad in first two dimensions.
+    rs=torch.nn.functional.pad(rs, (pad_size, pad_size, pad_size, pad_size), mode='reflect')
     # and convolve it with the psf
-    conv=torch.nn.functional.conv2d(rs,
-                                    weight=psf,
-                                    padding=0,
-                                    stride=[1,1])
-    conv=conv.reshape(samples.shape[1],samples.shape[2],samples.shape[3])
-    
+    conv_list= []
+    for psf in psf_list:
+        conv = torch.nn.functional.conv2d(rs,
+                                        weight=psf,
+                                        padding=0,
+                                        stride=[1,1])
+        conv_list.append(conv)
+    conv = torch.cat(conv_list,dim=1)
+
     # This is the implementation of the positivity constraint
     signs = (samples < 0).float()
     samples_positivity_constraint = samples * signs
@@ -282,7 +286,7 @@ def trainNetwork(net, trainData, valData, postfix, device,
                  virtualBatchSize=20, valSize=20,
                  augment=True,
                  supervised=False,
-                 psf=None, regularization = 0.0, positivity_constraint = 1.0):
+                 psf_list=None, regularization = 0.0, positivity_constraint = 1.0):
     '''
     Train a network using 
     
@@ -322,7 +326,7 @@ def trainNetwork(net, trainData, valData, postfix, device,
         should the patches be randomy flipped and rotated? 
     supervised: bool
         Use this if you want to do supervised training instead of N2V
-    psf: torch tensor
+    psf_list: List[]
         This is the PSF that will be convolved with the predicted image during training
     regularization: float
         The weight for optional TV regularization of the deconvolved image.
@@ -371,7 +375,7 @@ def trainNetwork(net, trainData, valData, postfix, device,
                                                                device,
                                                                augment = augment,
                                                                supervised = supervised)
-            loss=lossFunction(outputs, labels, masks, net.std, psf, regularization, positivity_constraint)
+            loss=lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
             loss.backward()
             running_loss += loss.item()
             losses.append(loss.item())
