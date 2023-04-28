@@ -4,6 +4,7 @@ import glob
 import os
 import random
 import sys
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -88,10 +89,12 @@ net = UNet(1, depth=args.netDepth)
 
 psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
 # Start training
+timestr = datetime.now().strftime('%Y%m%d_%H.%M')
+postfix = f"last_{args.name}_{timestr}"
 trainHist, valHist = training.trainNetwork(net=net,
                                            trainData=my_train_data,
                                            valData=my_val_data,
-                                           postfix=args.name,
+                                           postfix=postfix,
                                            directory=path,
                                            device=device,
                                            numOfEpochs=args.epochs,

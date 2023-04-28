@@ -417,7 +417,8 @@ def trainNetwork(net,
                            str(2.0 * np.std(losses) / np.sqrt(losses.size)))
             trainHist.append(np.mean(losses))
             losses = []
-            torch.save(net, os.path.join(directory, "last_" + postfix + ".net"))
+            fpath = os.path.join(directory, f"last_{postfix}.net")
+            torch.save(net, fpath)
 
             valCounter = 0
             net.train(False)
@@ -438,11 +439,11 @@ def trainNetwork(net,
             net.train(True)
             avgValLoss = np.mean(losses)
             if len(valHist) == 0 or avgValLoss < np.min(np.array(valHist)):
-                torch.save(net, os.path.join(directory, "best_" + postfix + ".net"))
+                torch.save(net, os.path.join(directory, f"best_{postfix}.net"))
             valHist.append(avgValLoss)
             scheduler.step(avgValLoss)
             epoch = (stepCounter / stepsPerEpoch)
-            np.save(os.path.join(directory, "history" + postfix + ".npy"),
+            np.save(os.path.join(directory, f"history_{postfix}.npy"),
                     (np.array([np.arange(epoch), trainHist, valHist])))
 
     utils.printNow('Finished Training')
