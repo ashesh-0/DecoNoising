@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
+from scipy.ndimage import gaussian_filter
 from torch.nn import init
 
 import deconoising.utils as utils
@@ -250,7 +251,7 @@ def apply_psf_list(samples, psf_list):
     psf_shape = psf_list[0].shape[2]
     pad_size = (psf_shape - 1) // 2
     assert psf_list[0].shape[2] == psf_list[0].shape[3]
-    assert samples.shape[0] == 1
+    assert samples.shape[0] == 1, samples.shape
     rs = samples[0][:, None]
     # rs=torch.mean(samples,dim=0).reshape(samples.shape[1],1,samples.shape[2],samples.shape[3])
     # we pad the result
@@ -282,6 +283,15 @@ def lossFunction(samples, labels, masks, std, psf_list, regularization, positivi
 
     return loss / (std**2) + (torch.mean(reg) * regularization +
                               positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint))) / std
+
+
+def artificial_psf(size_of_psf, std_gauss):
+    filt = np.zeros((size_of_psf, size_of_psf))
+    p = (size_of_psf - 1) // 2
+    filt[p, p] = 1
+    filt = torch.tensor(gaussian_filter(filt, std_gauss).reshape(1, 1, size_of_psf, size_of_psf).astype(np.float32))
+    filt = filt / torch.sum(filt)
+    return filt
 
 
 def trainNetwork(net,

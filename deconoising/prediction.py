@@ -94,7 +94,8 @@ def tiledPredict(im, net, ps, overlap, device, pad=False, outScaling=10.0, psf_l
 
     denoisedResult = None
     if psf_list:
-        denoisedResult = apply_psf_list(deconvolvedResult, psf_list)
+        denoisedResult = apply_psf_list(torch.Tensor(deconvolvedResult[None, None]), psf_list)
+        denoisedResult = denoisedResult.cpu()[0, 0].numpy()
 
     return deconvolvedResult, denoisedResult
 
