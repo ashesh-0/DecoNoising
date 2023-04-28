@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from unet.model import UNet
 import torch
-from pn2v import utils
-from pn2v import training
+import deconoising.utils as utils
+import deconoising.training as training
 from tifffile import imread
 from scipy.ndimage import gaussian_filter
 import glob
@@ -29,9 +29,9 @@ parser.add_argument("--learningRate", help="initial learning rate", default=1e-3
 parser.add_argument("--netKernelSize", help="size of conv. kernels in first layer", default=3, type=int)
 parser.add_argument("--unet_n_first", help="number of feature channels in the first u-net layer", default=64, type=int)
 # parser.add_argument("--sizePSF", help="size of psf in pix, odd number", default=81, type=int)
-parser.add_argument("--sizePSF", '--names-list', nargs='+', default=[])
+parser.add_argument("--sizePSF", nargs='+', default=[])
 # parser.add_argument("--stdPSF", help="size of std of gauss for psf", default=1.0, type=float)
-parser.add_argument("--stdPSF", '--names-list', nargs='+', default=[])
+parser.add_argument("--stdPSF", nargs='+', default=[])
 parser.add_argument("--positivityConstraint", help="positivity constraint parameter", default=1.0, type=float)
 parser.add_argument("--meanValue", help="mean value for the background ", default=0.0, type=float)
 
@@ -51,18 +51,14 @@ print("args",str(args.name))
 #           PREPARE TRAINING DATA
 ####################################################
 path = args.dataPath
-files = sorted(glob.glob(path + args.fileName))
-files.sort(key = lambda s: len(s))
-# Load the training data
+# import pdb;pdb.set_trace()
+fpath= os.path.join(args.dataPath, args.fileName)
 data = []
-for f in files:
-    current_img = imread(f)
-    data.append(current_img.astype(np.float32))
+assert fpath.split('.')[-1] == 'npz'
+data_dict = np.load(fpath)
+X_train = data_dict['X_train']
+X_val = data_dict['X_val']
 
-data = np.array(data) - args.meanValue
-
-if len(data.shape)==4:
-    data.shape = (data.shape[0]*data.shape[1],data.shape[2],data.shape[3])
 
 ####################################################
 #           PREPARE PSF
@@ -75,13 +71,17 @@ def artificial_psf(size_of_psf, std_gauss):
     filt = torch.tensor(gaussian_filter(filt,std_gauss).reshape(1,1,size_of_psf,size_of_psf).astype(np.float32))
     filt = filt/torch.sum(filt)
     return filt
-psf_list = [PSFspecify(args.sizePSF[k],args.stdPSF[k]) for k in len(args.sizePSF)]
+
+sizePSF = [int(x) for x in args.sizePSF]
+stdPSF = [float(x) for x in args.stdPSF]
+psf_list = [PSFspecify(sizePSF[k],stdPSF[k]) for k in range(len(sizePSF))]
 
 ##################
 # Augment the data
 ##################
-data = torch.Tensor(data[:,None])
-data = create_dataset(data, psf_list)
+# data = torch.Tensor(data[:,None])
+my_train_data = create_dataset(torch.Tensor(X_train[:,None]), psf_list).numpy()
+my_val_data = create_dataset(torch.Tensor(X_val[:,None]), psf_list).numpy()
 
 ####################################################
 #           CREATE AND TRAIN NETWORK
@@ -89,15 +89,11 @@ data = create_dataset(data, psf_list)
 net = UNet(1, depth=args.netDepth)
 # net.psf = psf_tensor.to(device)
 # Split training and validation data
-splitter = np.int(data.shape[0] * args.validationFraction/100.)
-print("splitter = ", splitter)
-my_train_data = data[:-splitter].copy()
-my_val_data = data[-splitter:].copy()
 
 psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
 # Start training
 trainHist, valHist = training.trainNetwork(net = net, trainData = my_train_data, valData = my_val_data,
-                                           postfix = args.name, directory = path, noiseModel = None,
+                                           postfix = args.name, directory = path,
                                            device = device, numOfEpochs = args.epochs, patchSize = args.patchSizeXY, stepsPerEpoch = 10,
 					   virtualBatchSize = 20, batchSize = args.batchSize, learningRate = 1e-3,
                        psf_list = psf_tensor_list, 

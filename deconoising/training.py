@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torchvision
 
-from pn2v import utils
+import deconoising.utils as utils
 
 
 ############################################
@@ -77,6 +77,7 @@ def randomCropFRI(data, size, numPix, supervised=False, counter=None, augment=Tr
         if counter>=data.shape[0]:
             counter=0
             np.random.shuffle(data)
+            
         index=counter
         counter+=1
 
@@ -85,7 +86,7 @@ def randomCropFRI(data, size, numPix, supervised=False, counter=None, augment=Tr
         imgClean=data[index,...,1]
         manipulate=False
     else:
-        img=data[index]
+        img=data[index] #6X128X128
         imgClean=img
         manipulate=True
         
@@ -127,21 +128,21 @@ def randomCrop(img, size, numPix, imgClean=None, augment=True, manipulate=True):
         In N2V or PN2V only these pixels should be used to calculate gradients.
     '''
     
-    assert img.shape[0] >= size
-    assert img.shape[1] >= size
+    assert min(img.shape[-2:]) >= size
+    # assert img.shape[1] >= size
 
-    x = np.random.randint(0, img.shape[1] - size)
-    y = np.random.randint(0, img.shape[0] - size)
+    x = np.random.randint(0, img.shape[-1] - size)
+    y = np.random.randint(0, img.shape[-2] - size)
 
-    imgOut = img[y:y+size, x:x+size].copy()
-    imgOutC= imgClean[y:y+size, x:x+size].copy()
+    imgOut = img[...,y:y+size, x:x+size].copy()
+    imgOutC= imgClean[...,y:y+size, x:x+size].copy()
     
-    maxA=imgOut.shape[1]-1
-    maxB=imgOut.shape[0]-1
+    maxA=imgOut.shape[-1]-1
+    maxB=imgOut.shape[-2]-1
     
     if manipulate:
         mask=np.zeros(imgOut.shape)
-        hotPixels=getStratifiedCoords2D(numPix,imgOut.shape)
+        hotPixels=getStratifiedCoords2D(numPix,imgOut.shape[-2:])
         for p in hotPixels:
             a,b=p[1],p[0]
 
@@ -149,28 +150,28 @@ def randomCrop(img, size, numPix, imgClean=None, augment=True, manipulate=True):
             roiMaxA=min(a+3,maxA)
             roiMinB=max(b-2,0)
             roiMaxB=min(b+3,maxB)
-            roi=imgOut[roiMinB:roiMaxB,roiMinA:roiMaxA]
+            roi=imgOut[...,roiMinB:roiMaxB,roiMinA:roiMaxA]
             a_ = 2
             b_ = 2
             while a_==2 and b_==2:
-                a_ = np.random.randint(0, roi.shape[1] )
-                b_ = np.random.randint(0, roi.shape[0] )
+                a_ = np.random.randint(0, roi.shape[-1] )
+                b_ = np.random.randint(0, roi.shape[-2] )
 
-            repl=roi[b_,a_]
-            imgOut[b,a]=repl
-            mask[b,a]=1.0
+            repl=roi[...,b_,a_]
+            imgOut[...,b,a]=repl
+            mask[...,b,a]=1.0
     else:
         mask=np.ones(imgOut.shape)
 
     if augment:
         rot=np.random.randint(0,4)
-        imgOut=np.array(np.rot90(imgOut,rot))
-        imgOutC=np.array(np.rot90(imgOutC,rot))
-        mask=np.array(np.rot90(mask,rot))
+        imgOut=np.array(np.rot90(imgOut,rot,axes=(-2,-1)))
+        imgOutC=np.array(np.rot90(imgOutC,rot,axes=(-2,-1)))
+        mask=np.array(np.rot90(mask,rot,axes=(-2,-1)))
         if np.random.choice((True,False)):
-            imgOut=np.array(np.flip(imgOut))
-            imgOutC=np.array(np.flip(imgOutC))
-            mask=np.array(np.flip(mask))
+            imgOut=np.array(np.flip(imgOut, axis=(-2,-1)))
+            imgOutC=np.array(np.flip(imgOutC, axis=(-2,-1)))
+            mask=np.array(np.flip(mask, axis=(-2,-1)))
 
 
     return imgOut, imgOutC, mask
@@ -215,18 +216,20 @@ def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augm
     labels= torch.zeros(bs,size,size)
     masks= torch.zeros(bs,size,size)
    
-
+    psf_count = my_train_data.shape[1]
+    assert bs%psf_count ==0
+    n_groups = bs//psf_count
     # Assemble mini batch
-    for j in range(bs):
+    for j in range(n_groups):
         im,l,m, dataCounter=randomCropFRI(my_train_data,
                                           size,
                                           numPix,
                                           counter=dataCounter,
                                           augment=augment,
                                           supervised=supervised)
-        inputs[j,:,:,:]=utils.imgToTensor(im)
-        labels[j,:,:]=utils.imgToTensor(l)
-        masks[j,:,:]=utils.imgToTensor(m)
+        inputs[psf_count*j:psf_count*(j+1)]=torch.Tensor(im[:,None])    #utils.imgToTensor(im)
+        labels[psf_count*j:psf_count*(j+1)]=torch.Tensor(l)     #utils.imgToTensor(l)
+        masks[psf_count*j:psf_count*(j+1)]=torch.Tensor(m)      #utils.imgToTensor(m)
 
     # Move to GPU
     inputs_raw, labels, masks= inputs.to(device), labels.to(device), masks.to(device)
@@ -343,9 +346,9 @@ def trainNetwork(net, trainData, valData, postfix, device,
         
     # Calculate mean and std of data.
     # Everything that is processed by the net will be normalized and denormalized using these numbers.
-    combined=np.concatenate((trainData,valData))
-    net.mean=np.mean(combined)
-    net.std=np.std(combined)
+    # combined=np.concatenate((trainData,valData))
+    net.mean=np.mean(trainData)
+    net.std=np.std(trainData)
     
     net.to(device)
     
@@ -405,7 +408,8 @@ def trainNetwork(net, trainData, valData, postfix, device,
                                                                   device,
                                                                   augment = augment,
                                                                   supervised = supervised)
-                loss=lossFunction(outputs, labels, masks, net.std, psf, regularization, positivity_constraint)
+                
+                loss=lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
                 losses.append(loss.item())
             net.train(True)
             avgValLoss=np.mean(losses)
