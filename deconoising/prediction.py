@@ -5,9 +5,7 @@
 import numpy as np
 import torch
 
-from pn2v.utils import imgToTensor
-from pn2v.utils import denormalize
-from pn2v.utils import normalize
+from deconoising.training import apply_psf_list
 
 
 def predict(im, net, device, outScaling):
@@ -29,34 +27,34 @@ def predict(im, net, device, outScaling):
     decoPred: numpy array
         Image containing the prediction.
     '''
-    stdTorch=torch.Tensor(np.array(net.std)).to(device)
-    meanTorch=torch.Tensor(np.array(net.mean)).to(device)
-    
+    stdTorch = torch.Tensor(np.array(net.std)).to(device)
+    meanTorch = torch.Tensor(np.array(net.mean)).to(device)
+
     #im=(im-net.mean)/net.std
-    
-    inputs_raw= torch.zeros(1,1,im.shape[0],im.shape[1])
-    inputs_raw[0,:,:,:]=imgToTensor(im);
+
+    inputs_raw = torch.zeros(1, 1, im.shape[0], im.shape[1])
+    inputs_raw[0, :, :, :] = torch.Tensor(im)
 
     # copy to GPU
     inputs_raw = inputs_raw.to(device)
-    
+
     # normalize
-    inputs = (inputs_raw-meanTorch)/stdTorch
+    inputs = (inputs_raw - meanTorch) / stdTorch
 
-    output=net(inputs)
+    output = net(inputs)
 
-    samples = (output).permute(1, 0, 2, 3)*outScaling #We found that this factor can speed up training
+    samples = (output).permute(1, 0, 2, 3) * outScaling  #We found that this factor can speed up training
     samples = samples * stdTorch + meanTorch
-    
+
     # denormalize
-    decoPred = torch.mean(samples,dim=0,keepdim=True)[0,...] # Sum up over all samples
+    decoPred = torch.mean(samples, dim=0, keepdim=True)[0, ...]  # Sum up over all samples
     decoPred = decoPred.cpu().detach().numpy()
-    decoPred.shape = (output.shape[2],output.shape[3])
+    decoPred.shape = (output.shape[2], output.shape[3])
 
     return decoPred, None
 
 
-def tiledPredict(im, net, ps, overlap, device, pad=False, outScaling=10.0):
+def tiledPredict(im, net, ps, overlap, device, pad=False, outScaling=10.0, psf_list=None):
     '''
     Tile the image to save GPU memory.
     Process it using our network.
@@ -92,23 +90,13 @@ def tiledPredict(im, net, ps, overlap, device, pad=False, outScaling=10.0):
     if pad:
         deconvolvedResult = tiledPredict_pad(im, net, ps, overlap, device, outScaling)
     else:
-        deconvolvedResult = tiledPredict_reflect(im, net, ps, overlap, device, outScaling)    
-    
-    psf=net.psf.cpu()
-    psf_shape = psf.shape[2]
-    pad_size = (psf_shape - 1)//2
-    
-    # We pad the result and then convolve it with the PSF to compute the denoised result
-    deconvolved_ = torch.from_numpy(deconvolvedResult.astype(np.float32))
-    deconvolved_ = deconvolved_.reshape(1,1,deconvolvedResult.shape[0],deconvolvedResult.shape[1])
-    deconvolved_ = torch.nn.functional.pad(deconvolved_,(pad_size, pad_size, pad_size, pad_size),mode='reflect')
-    denoisedResult = torch.nn.functional.conv2d(deconvolved_,
-                                                weight=psf,
-                                                padding=0,
-                                                stride=[1,1])[0,0,:,:].numpy()
-    
+        deconvolvedResult = tiledPredict_reflect(im, net, ps, overlap, device, outScaling)
+
+    denoisedResult = None
+    if psf_list:
+        denoisedResult = apply_psf_list(deconvolvedResult, psf_list)
+
     return deconvolvedResult, denoisedResult
-    
 
 
 def tiledPredict_pad(im, net, ps, overlap, device, outScaling=10.0):
@@ -137,38 +125,39 @@ def tiledPredict_pad(im, net, ps, overlap, device, outScaling=10.0):
     decoPred: numpy array
         Image containing the prediction.
     '''
-    
-    decoPred=np.zeros(im.shape)
-    xmin=0
-    ymin=0
-    xmax=ps
-    ymax=ps
-    ovLeft=0
-    while (xmin<im.shape[1]):
-        ovTop=0
-        while (ymin<im.shape[0]):
-            inputPatch=im[ymin:ymax,xmin:xmax]
-            padX=ps-inputPatch.shape[1]
-            padY=ps-inputPatch.shape[0]
-             
-            inputPatch=np.pad(inputPatch,((0, padY),(0,padX)), 'constant', constant_values=(net.mean,net.mean) )
-            #inputPatch=np.pad(inputPatch,((0, padY),(0,padX)), 'reflect')     
-            a,b = predict(inputPatch, net, device, outScaling=outScaling)       
-            a=a[:a.shape[0]-padY, :a.shape[1]-padX] 
 
-            decoPred[ymin:ymax,xmin:xmax][ovTop:,ovLeft:] = a[ovTop:,ovLeft:]
-            
-            ymin=ymin-overlap+ps
-            ymax=ymin+ps
-            ovTop=overlap//2
-        ymin=0
-        ymax=ps
-        xmin=xmin-overlap+ps
-        xmax=xmin+ps
-        ovLeft=overlap//2
-        
+    decoPred = np.zeros(im.shape)
+    xmin = 0
+    ymin = 0
+    xmax = ps
+    ymax = ps
+    ovLeft = 0
+    while (xmin < im.shape[1]):
+        ovTop = 0
+        while (ymin < im.shape[0]):
+            inputPatch = im[ymin:ymax, xmin:xmax]
+            padX = ps - inputPatch.shape[1]
+            padY = ps - inputPatch.shape[0]
+
+            inputPatch = np.pad(inputPatch, ((0, padY), (0, padX)), 'constant', constant_values=(net.mean, net.mean))
+            #inputPatch=np.pad(inputPatch,((0, padY),(0,padX)), 'reflect')
+            a, b = predict(inputPatch, net, device, outScaling=outScaling)
+            a = a[:a.shape[0] - padY, :a.shape[1] - padX]
+
+            decoPred[ymin:ymax, xmin:xmax][ovTop:, ovLeft:] = a[ovTop:, ovLeft:]
+
+            ymin = ymin - overlap + ps
+            ymax = ymin + ps
+            ovTop = overlap // 2
+        ymin = 0
+        ymax = ps
+        xmin = xmin - overlap + ps
+        xmax = xmin + ps
+        ovLeft = overlap // 2
+
     return decoPred
-    
+
+
 def tiledPredict_reflect(im, net, ps, overlap, device, outScaling=10.0):
     '''
     Tile the image to save GPU memory.
@@ -196,30 +185,29 @@ def tiledPredict_reflect(im, net, ps, overlap, device, outScaling=10.0):
     decoPred: numpy array
         Image containing the prediction.
     '''
-    
-    decoPred=np.zeros(im.shape)
-    xmin=0
-    ymin=0
-    xmax=ps
-    ymax=ps
-    ovLeft=0
-    while (xmin<im.shape[1]):
-        ovTop=0
-        while (ymin<im.shape[0]):
-            ymin_ = min(im.shape[0], ymax)-ps
-            xmin_ = min(im.shape[1], xmax)-ps
-            lastPatchShiftY = ymin-ymin_
-            lastPatchShiftX = xmin-xmin_  
-            a,b = predict(im[ymin_:ymax,xmin_:xmax], net, device, outScaling=outScaling)
-            decoPred[ymin:ymax,xmin:xmax][ovTop:,ovLeft:] = a[lastPatchShiftY:,lastPatchShiftX:][ovTop:,ovLeft:]
-            ymin=ymin-overlap+ps
-            ymax=ymin+ps
-            ovTop=overlap//2
-        ymin=0
-        ymax=ps
-        xmin=xmin-overlap+ps
-        xmax=xmin+ps
-        ovLeft=overlap//2
-        
+
+    decoPred = np.zeros(im.shape)
+    xmin = 0
+    ymin = 0
+    xmax = ps
+    ymax = ps
+    ovLeft = 0
+    while (xmin < im.shape[1]):
+        ovTop = 0
+        while (ymin < im.shape[0]):
+            ymin_ = min(im.shape[0], ymax) - ps
+            xmin_ = min(im.shape[1], xmax) - ps
+            lastPatchShiftY = ymin - ymin_
+            lastPatchShiftX = xmin - xmin_
+            a, b = predict(im[ymin_:ymax, xmin_:xmax], net, device, outScaling=outScaling)
+            decoPred[ymin:ymax, xmin:xmax][ovTop:, ovLeft:] = a[lastPatchShiftY:, lastPatchShiftX:][ovTop:, ovLeft:]
+            ymin = ymin - overlap + ps
+            ymax = ymin + ps
+            ovTop = overlap // 2
+        ymin = 0
+        ymax = ps
+        xmin = xmin - overlap + ps
+        xmax = xmin + ps
+        ovLeft = overlap // 2
 
     return decoPred

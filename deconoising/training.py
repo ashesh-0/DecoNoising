@@ -1,15 +1,15 @@
-import torch.optim as optim
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import init
-import numpy as np
-import matplotlib.pyplot as plt
+import torch.optim as optim
 import torchvision
+from torch.nn import init
 
 import deconoising.utils as utils
-
 
 ############################################
 #   Training the network
@@ -20,7 +20,7 @@ def getStratifiedCoords2D(numPix, shape):
     '''
     Produce a list of approx. 'numPix' random coordinate, sampled from 'shape' using startified sampling.
     '''
-    box_size = np.round(np.sqrt(shape[0] * shape[1] / numPix)).astype(np.int)
+    box_size = np.round(np.sqrt(shape[0] * shape[1] / numPix)).astype(np.int32)
     coords = []
     box_count_y = int(np.ceil(shape[0] / box_size))
     box_count_x = int(np.ceil(shape[1] / box_size))
@@ -70,32 +70,30 @@ def randomCropFRI(data, size, numPix, supervised=False, counter=None, augment=Tr
         The updated counter parameter, it is increased by one.
         When the counter reaches the end of the dataset, it is reset to zero and the dataset is shuffled.
     '''
-    
+
     if counter is None:
-        index=np.random.randint(0, data.shape[0])
+        index = np.random.randint(0, data.shape[0])
     else:
-        if counter>=data.shape[0]:
-            counter=0
+        if counter >= data.shape[0]:
+            counter = 0
             np.random.shuffle(data)
-            
-        index=counter
-        counter+=1
+
+        index = counter
+        counter += 1
 
     if supervised:
-        img=data[index,...,0]
-        imgClean=data[index,...,1]
-        manipulate=False
+        img = data[index, ..., 0]
+        imgClean = data[index, ..., 1]
+        manipulate = False
     else:
-        img=data[index] #6X128X128
-        imgClean=img
-        manipulate=True
-        
-    imgOut, imgOutC, mask = randomCrop(img, size, numPix,
-                                      imgClean=imgClean,
-                                      augment=augment,
-                                      manipulate = manipulate )
-    
+        img = data[index]  #6X128X128
+        imgClean = img
+        manipulate = True
+
+    imgOut, imgOutC, mask = randomCrop(img, size, numPix, imgClean=imgClean, augment=augment, manipulate=manipulate)
+
     return imgOut, imgOutC, mask, counter
+
 
 def randomCrop(img, size, numPix, imgClean=None, augment=True, manipulate=True):
     '''
@@ -127,54 +125,54 @@ def randomCrop(img, size, numPix, imgClean=None, augment=True, manipulate=True):
         An image marking which pixels have been manipulated (value 1) and which not (value 0).
         In N2V or PN2V only these pixels should be used to calculate gradients.
     '''
-    
+
     assert min(img.shape[-2:]) >= size
     # assert img.shape[1] >= size
 
     x = np.random.randint(0, img.shape[-1] - size)
     y = np.random.randint(0, img.shape[-2] - size)
 
-    imgOut = img[...,y:y+size, x:x+size].copy()
-    imgOutC= imgClean[...,y:y+size, x:x+size].copy()
-    
-    maxA=imgOut.shape[-1]-1
-    maxB=imgOut.shape[-2]-1
-    
-    if manipulate:
-        mask=np.zeros(imgOut.shape)
-        hotPixels=getStratifiedCoords2D(numPix,imgOut.shape[-2:])
-        for p in hotPixels:
-            a,b=p[1],p[0]
+    imgOut = img[..., y:y + size, x:x + size].copy()
+    imgOutC = imgClean[..., y:y + size, x:x + size].copy()
 
-            roiMinA=max(a-2,0)
-            roiMaxA=min(a+3,maxA)
-            roiMinB=max(b-2,0)
-            roiMaxB=min(b+3,maxB)
-            roi=imgOut[...,roiMinB:roiMaxB,roiMinA:roiMaxA]
+    maxA = imgOut.shape[-1] - 1
+    maxB = imgOut.shape[-2] - 1
+
+    if manipulate:
+        mask = np.zeros(imgOut.shape)
+        hotPixels = getStratifiedCoords2D(numPix, imgOut.shape[-2:])
+        for p in hotPixels:
+            a, b = p[1], p[0]
+
+            roiMinA = max(a - 2, 0)
+            roiMaxA = min(a + 3, maxA)
+            roiMinB = max(b - 2, 0)
+            roiMaxB = min(b + 3, maxB)
+            roi = imgOut[..., roiMinB:roiMaxB, roiMinA:roiMaxA]
             a_ = 2
             b_ = 2
-            while a_==2 and b_==2:
-                a_ = np.random.randint(0, roi.shape[-1] )
-                b_ = np.random.randint(0, roi.shape[-2] )
+            while a_ == 2 and b_ == 2:
+                a_ = np.random.randint(0, roi.shape[-1])
+                b_ = np.random.randint(0, roi.shape[-2])
 
-            repl=roi[...,b_,a_]
-            imgOut[...,b,a]=repl
-            mask[...,b,a]=1.0
+            repl = roi[..., b_, a_]
+            imgOut[..., b, a] = repl
+            mask[..., b, a] = 1.0
     else:
-        mask=np.ones(imgOut.shape)
+        mask = np.ones(imgOut.shape)
 
     if augment:
-        rot=np.random.randint(0,4)
-        imgOut=np.array(np.rot90(imgOut,rot,axes=(-2,-1)))
-        imgOutC=np.array(np.rot90(imgOutC,rot,axes=(-2,-1)))
-        mask=np.array(np.rot90(mask,rot,axes=(-2,-1)))
-        if np.random.choice((True,False)):
-            imgOut=np.array(np.flip(imgOut, axis=(-2,-1)))
-            imgOutC=np.array(np.flip(imgOutC, axis=(-2,-1)))
-            mask=np.array(np.flip(mask, axis=(-2,-1)))
-
+        rot = np.random.randint(0, 4)
+        imgOut = np.array(np.rot90(imgOut, rot, axes=(-2, -1)))
+        imgOutC = np.array(np.rot90(imgOutC, rot, axes=(-2, -1)))
+        mask = np.array(np.rot90(mask, rot, axes=(-2, -1)))
+        if np.random.choice((True, False)):
+            imgOut = np.array(np.flip(imgOut, axis=(-2, -1)))
+            imgOutC = np.array(np.flip(imgOutC, axis=(-2, -1)))
+            mask = np.array(np.flip(mask, axis=(-2, -1)))
 
     return imgOut, imgOutC, mask
+
 
 def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augment=True, supervised=True):
     '''
@@ -210,86 +208,101 @@ def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augm
         The updated counter parameter, it is increased by one.
         When the counter reaches the end of the dataset, it is reset to zero and the dataset is shuffled.
     '''
-    
+
     # Init Variables
-    inputs= torch.zeros(bs,1,size,size)
-    labels= torch.zeros(bs,size,size)
-    masks= torch.zeros(bs,size,size)
-   
+    inputs = torch.zeros(bs, 1, size, size)
+    labels = torch.zeros(bs, size, size)
+    masks = torch.zeros(bs, size, size)
+
     psf_count = my_train_data.shape[1]
-    assert bs%psf_count ==0
-    n_groups = bs//psf_count
+    assert bs % psf_count == 0
+    n_groups = bs // psf_count
     # Assemble mini batch
     for j in range(n_groups):
-        im,l,m, dataCounter=randomCropFRI(my_train_data,
-                                          size,
-                                          numPix,
-                                          counter=dataCounter,
-                                          augment=augment,
-                                          supervised=supervised)
-        inputs[psf_count*j:psf_count*(j+1)]=torch.Tensor(im[:,None])    #utils.imgToTensor(im)
-        labels[psf_count*j:psf_count*(j+1)]=torch.Tensor(l)     #utils.imgToTensor(l)
-        masks[psf_count*j:psf_count*(j+1)]=torch.Tensor(m)      #utils.imgToTensor(m)
+        im, l, m, dataCounter = randomCropFRI(my_train_data,
+                                              size,
+                                              numPix,
+                                              counter=dataCounter,
+                                              augment=augment,
+                                              supervised=supervised)
+        inputs[psf_count * j:psf_count * (j + 1)] = torch.Tensor(im[:, None])  #utils.imgToTensor(im)
+        labels[psf_count * j:psf_count * (j + 1)] = torch.Tensor(l)  #utils.imgToTensor(l)
+        masks[psf_count * j:psf_count * (j + 1)] = torch.Tensor(m)  #utils.imgToTensor(m)
 
     # Move to GPU
-    inputs_raw, labels, masks= inputs.to(device), labels.to(device), masks.to(device)
+    inputs_raw, labels, masks = inputs.to(device), labels.to(device), masks.to(device)
 
     # Move normalization parameter to GPU
-    stdTorch=torch.Tensor(np.array(net.std)).to(device)
-    meanTorch=torch.Tensor(np.array(net.mean)).to(device)
-    
+    stdTorch = torch.Tensor(np.array(net.std)).to(device)
+    meanTorch = torch.Tensor(np.array(net.mean)).to(device)
+
     # Forward step
-    outputs = net((inputs_raw-meanTorch)/stdTorch) * 10.0 #We found that this factor can speed up training
-    samples=(outputs).permute(1, 0, 2, 3)
-    
+    outputs = net((inputs_raw - meanTorch) / stdTorch) * 10.0  #We found that this factor can speed up training
+    samples = (outputs).permute(1, 0, 2, 3)
+
     # Denormalize
     samples = samples * stdTorch + meanTorch
-    
+
     return samples, labels, masks, dataCounter
 
-def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint):
+
+def apply_psf_list(samples, psf_list):
     psf_shape = psf_list[0].shape[2]
-    pad_size = (psf_shape - 1)//2
+    pad_size = (psf_shape - 1) // 2
     assert psf_list[0].shape[2] == psf_list[0].shape[3]
-    rs=torch.mean(samples,dim=0).reshape(samples.shape[1],1,samples.shape[2],samples.shape[3])
+    assert samples.shape[0] == 1
+    rs = samples[0][:, None]
+    # rs=torch.mean(samples,dim=0).reshape(samples.shape[1],1,samples.shape[2],samples.shape[3])
     # we pad the result
     # TODO: check the padding. I don't think one needs to pad in first two dimensions.
-    rs=torch.nn.functional.pad(rs, (pad_size, pad_size, pad_size, pad_size), mode='reflect')
+    rs = torch.nn.functional.pad(rs, (pad_size, pad_size, pad_size, pad_size), mode='reflect')
     # and convolve it with the psf
-    conv_list= []
+    conv_list = []
     for psf in psf_list:
-        conv = torch.nn.functional.conv2d(rs,
-                                        weight=psf,
-                                        padding=0,
-                                        stride=[1,1])
+        conv = torch.nn.functional.conv2d(rs, weight=psf, padding=0, stride=[1, 1])
         conv_list.append(conv)
-    conv = torch.cat(conv_list,dim=1)
+    conv = torch.cat(conv_list, dim=1)
+    return conv
 
+
+def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint):
+    conv = apply_psf_list(samples, psf_list)
     # This is the implementation of the positivity constraint
     signs = (samples < 0).float()
     samples_positivity_constraint = samples * signs
-    
+
     # the N2V loss
-    errors=(labels-conv)**2
-    loss= torch.sum( errors *masks  ) /torch.sum(masks)
-    
+    errors = (labels - conv)**2
+    loss = torch.sum(errors * masks) / torch.sum(masks)
+
     # TV regularization
-    yprior=((samples[:,:,2:,1:-1]-samples[:,:,:-2,1:-1])/2.0)**2
-    xprior=((samples[:,:,1:-1,2:]-samples[:,:,1:-1,:-2])/2.0)**2
-    reg=torch.sqrt(yprior+xprior+1e-15) # total variation
-    
-    return loss/(std**2) + (torch.mean(reg)*regularization + positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint)))/std
+    yprior = ((samples[:, :, 2:, 1:-1] - samples[:, :, :-2, 1:-1]) / 2.0)**2
+    xprior = ((samples[:, :, 1:-1, 2:] - samples[:, :, 1:-1, :-2]) / 2.0)**2
+    reg = torch.sqrt(yprior + xprior + 1e-15)  # total variation
+
+    return loss / (std**2) + (torch.mean(reg) * regularization +
+                              positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint))) / std
 
 
-def trainNetwork(net, trainData, valData, postfix, device,
+def trainNetwork(net,
+                 trainData,
+                 valData,
+                 postfix,
+                 device,
                  directory='.',
-                 numOfEpochs=200, stepsPerEpoch=50,
-                 batchSize=4, patchSize=100, learningRate=0.0001,
-                 numMaskedPixels=100*100/32.0, 
-                 virtualBatchSize=20, valSize=20,
+                 numOfEpochs=200,
+                 stepsPerEpoch=50,
+                 batchSize=4,
+                 patchSize=100,
+                 learningRate=0.0001,
+                 numMaskedPixels=100 * 100 / 32.0,
+                 virtualBatchSize=20,
+                 valSize=20,
                  augment=True,
                  supervised=False,
-                 psf_list=None, regularization = 0.0, positivity_constraint = 1.0):
+                 psf_list=None,
+                 regularization=0.0,
+                 positivity_constraint=1.0):
     '''
     Train a network using 
     
@@ -343,42 +356,42 @@ def trainNetwork(net, trainData, valData, postfix, device,
     valHist: numpy array
         A numpy array containing the avg. validation loss after each epoch.
     '''
-        
+
     # Calculate mean and std of data.
     # Everything that is processed by the net will be normalized and denormalized using these numbers.
     # combined=np.concatenate((trainData,valData))
-    net.mean=np.mean(trainData)
-    net.std=np.std(trainData)
-    
+    net.mean = np.mean(trainData)
+    net.std = np.std(trainData)
+
     net.to(device)
-    
+
     optimizer = optim.Adam(net.parameters(), lr=learningRate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.5, verbose=True)
 
     running_loss = 0.0
-    stepCounter=0
-    dataCounter=0
+    stepCounter = 0
+    dataCounter = 0
 
-    trainHist=[]
-    valHist=[]
-    
+    trainHist = []
+    valHist = []
+
     while stepCounter / stepsPerEpoch < numOfEpochs:  # loop over the dataset multiple times
-        losses=[]
+        losses = []
         optimizer.zero_grad()
-        stepCounter+=1
+        stepCounter += 1
 
         # Loop over our virtual batch
-        for a in range (virtualBatchSize):
+        for a in range(virtualBatchSize):
             outputs, labels, masks, dataCounter = trainingPred(trainData,
                                                                net,
                                                                dataCounter,
-                                                               patchSize, 
+                                                               patchSize,
                                                                batchSize,
                                                                numMaskedPixels,
                                                                device,
-                                                               augment = augment,
-                                                               supervised = supervised)
-            loss=lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
+                                                               augment=augment,
+                                                               supervised=supervised)
+            loss = lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
             loss.backward()
             running_loss += loss.item()
             losses.append(loss.item())
@@ -386,39 +399,41 @@ def trainNetwork(net, trainData, valData, postfix, device,
         optimizer.step()
 
         # We have reached the end of an epoch
-        if stepCounter % stepsPerEpoch == stepsPerEpoch-1:
-            running_loss=(np.mean(losses))
-            losses=np.array(losses)
-            utils.printNow("Epoch "+str(int(stepCounter / stepsPerEpoch))+" finished")
-            utils.printNow("avg. loss: "+str(np.mean(losses))+"+-(2SEM)"+str(2.0*np.std(losses)/np.sqrt(losses.size)))
+        if stepCounter % stepsPerEpoch == stepsPerEpoch - 1:
+            running_loss = (np.mean(losses))
+            losses = np.array(losses)
+            utils.printNow("Epoch " + str(int(stepCounter / stepsPerEpoch)) + " finished")
+            utils.printNow("avg. loss: " + str(np.mean(losses)) + "+-(2SEM)" +
+                           str(2.0 * np.std(losses) / np.sqrt(losses.size)))
             trainHist.append(np.mean(losses))
-            losses=[]
-            torch.save(net,os.path.join(directory,"last_"+postfix+".net"))
+            losses = []
+            torch.save(net, os.path.join(directory, "last_" + postfix + ".net"))
 
-            valCounter=0
+            valCounter = 0
             net.train(False)
-            losses=[]
+            losses = []
             for i in range(valSize):
                 outputs, labels, masks, valCounter = trainingPred(valData,
                                                                   net,
                                                                   valCounter,
-                                                                  patchSize, 
+                                                                  patchSize,
                                                                   batchSize,
                                                                   numMaskedPixels,
                                                                   device,
-                                                                  augment = augment,
-                                                                  supervised = supervised)
-                
-                loss=lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
+                                                                  augment=augment,
+                                                                  supervised=supervised)
+
+                loss = lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
                 losses.append(loss.item())
             net.train(True)
-            avgValLoss=np.mean(losses)
-            if len(valHist)==0 or avgValLoss < np.min(np.array(valHist)):
-                torch.save(net,os.path.join(directory,"best_"+postfix+".net"))
+            avgValLoss = np.mean(losses)
+            if len(valHist) == 0 or avgValLoss < np.min(np.array(valHist)):
+                torch.save(net, os.path.join(directory, "best_" + postfix + ".net"))
             valHist.append(avgValLoss)
             scheduler.step(avgValLoss)
-            epoch= (stepCounter / stepsPerEpoch)
-            np.save(os.path.join(directory,"history"+postfix+".npy"), (np.array( [np.arange(epoch),trainHist,valHist ] ) ) )
+            epoch = (stepCounter / stepsPerEpoch)
+            np.save(os.path.join(directory, "history" + postfix + ".npy"),
+                    (np.array([np.arange(epoch), trainHist, valHist])))
 
     utils.printNow('Finished Training')
     return trainHist, valHist
