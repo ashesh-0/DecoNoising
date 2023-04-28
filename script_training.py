@@ -91,7 +91,7 @@ psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_l
 # Start training
 timestr = datetime.now().strftime('%Y%m%d_%H.%M')
 mean_psf_std = np.mean([psf.std for psf in psf_list]).round(1)
-postfix = f"last_{args.name}_N{len(psf_list)}_Avg{mean_psf_std}_{timestr}"
+postfix = f"{args.name}_N{len(psf_list)}_Avg{mean_psf_std}_{timestr}"
 trainHist, valHist = training.trainNetwork(net=net,
                                            trainData=my_train_data,
                                            valData=my_val_data,
