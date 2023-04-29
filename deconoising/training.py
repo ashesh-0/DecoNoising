@@ -267,7 +267,15 @@ def apply_psf_list(samples, psf_list):
 
 
 def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint):
-    conv = apply_psf_list(samples, psf_list)
+    assert samples.shape[0] == 1
+
+    conv_outputs = []
+    for i, psf in enumerate(psf_list):
+        conv = apply_psf_list(samples[:, i:i + 1], [psf])
+        conv_outputs.append(conv)
+
+    conv = torch.cat(conv_outputs, dim=1)
+    conv = conv[0]
     # This is the implementation of the positivity constraint
     signs = (samples < 0).float()
     samples_positivity_constraint = samples * signs
