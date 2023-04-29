@@ -45,7 +45,7 @@ class GaussianLayer(nn.Module):
         """
         return F.conv2d(F.pad(
             x, [self.kernel_size // 2, self.kernel_size // 2, self.kernel_size // 2, self.kernel_size // 2], 'reflect'),
-                        self._generate_gaussian(),
+                        self.generate_gaussian(),
                         stride=self.stride,
                         groups=self.input_channels)
 
@@ -64,7 +64,7 @@ class GaussianLayer(nn.Module):
         # for computation
         return (xv**2 + yv**2) / 2
 
-    def _generate_gaussian(self):
+    def generate_gaussian(self):
         """
         This function generates the Gaussian filter based on the standard deviation
         :return: the new Gaussian filter
