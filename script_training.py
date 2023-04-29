@@ -63,7 +63,9 @@ psf_list = [PSFspecify(sizePSF[k], stdPSF[k]) for k in range(len(sizePSF))]
 psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
 psf_std = [psf.std for psf in psf_list]
 workdir = get_workdir({'name': args.name, 'psf_list': psf_std}, args.rootWorkDir, args.use_max_version)
-
+print('')
+print('Saving model & config to', workdir)
+print('')
 ####################################################
 #           PREPARE TRAINING DATA
 ####################################################
