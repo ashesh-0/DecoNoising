@@ -211,39 +211,43 @@ def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augm
     '''
 
     # Init Variables
-    inputs = torch.zeros(bs, 1, size, size)
-    labels = torch.zeros(bs, size, size)
-    masks = torch.zeros(bs, size, size)
+    # inputs = torch.zeros(bs, 1, size, size)
+    # labels = torch.zeros(bs, size, size)
+    # masks = torch.zeros(bs, size, size)
 
     psf_count = my_train_data.shape[1]
     assert bs % psf_count == 0
     n_groups = bs // psf_count
+    assert n_groups == 1, f'Set bs appropriately, ie, to {psf_count}'
     # Assemble mini batch
-    for j in range(n_groups):
-        im, l, m, dataCounter = randomCropFRI(my_train_data,
-                                              size,
-                                              numPix,
-                                              counter=dataCounter,
-                                              augment=augment,
-                                              supervised=supervised)
-        inputs[psf_count * j:psf_count * (j + 1)] = torch.Tensor(im[:, None])  #utils.imgToTensor(im)
-        labels[psf_count * j:psf_count * (j + 1)] = torch.Tensor(l)  #utils.imgToTensor(l)
-        masks[psf_count * j:psf_count * (j + 1)] = torch.Tensor(m)  #utils.imgToTensor(m)
+    im, l, m, dataCounter = randomCropFRI(my_train_data,
+                                          size,
+                                          numPix,
+                                          counter=dataCounter,
+                                          augment=augment,
+                                          supervised=supervised)
+    inputs = torch.Tensor(im[:, None])  #utils.imgToTensor(im)
+    labels = torch.Tensor(l)  #utils.imgToTensor(l)
+    masks = torch.Tensor(m)  #utils.imgToTensor(m)
 
     # Move to GPU
     inputs_raw, labels, masks = inputs.to(device), labels.to(device), masks.to(device)
+    samples_list = []
+    for psf_idx in range(psf_count):
+        # Move normalization parameter to GPU
+        stdTorch = torch.Tensor(np.array(net[psf_idx].std)).to(device)
+        meanTorch = torch.Tensor(np.array(net[psf_idx].mean)).to(device)
 
-    # Move normalization parameter to GPU
-    stdTorch = torch.Tensor(np.array(net.std)).to(device)
-    meanTorch = torch.Tensor(np.array(net.mean)).to(device)
+        # Forward step
+        outputs = net[psf_idx]((inputs_raw[psf_idx:psf_idx + 1] - meanTorch) /
+                               stdTorch) * 10.0  #We found that this factor can speed up training
+        samples = (outputs).permute(1, 0, 2, 3)
 
-    # Forward step
-    outputs = net((inputs_raw - meanTorch) / stdTorch) * 10.0  #We found that this factor can speed up training
-    samples = (outputs).permute(1, 0, 2, 3)
+        # Denormalize
+        samples = samples * stdTorch + meanTorch
+        samples_list.append(samples)
 
-    # Denormalize
-    samples = samples * stdTorch + meanTorch
-
+    samples = torch.concatenate(samples_list, dim=1)
     return samples, labels, masks, dataCounter
 
 
@@ -266,7 +270,7 @@ def apply_psf_list(samples, psf_list):
     return conv
 
 
-def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.001):
+def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.01):
     assert samples.shape[0] == 1
 
     conv_outputs = []
@@ -381,8 +385,11 @@ def trainNetwork(net,
     # Calculate mean and std of data.
     # Everything that is processed by the net will be normalized and denormalized using these numbers.
     # combined=np.concatenate((trainData,valData))
-    net.mean = np.mean(trainData)
-    net.std = np.std(trainData)
+    for i in range(len(psf_list)):
+        data_mean = np.mean(trainData[:, i])
+        data_std = np.std(trainData[:, i])
+        net[i].mean = data_mean
+        net[i].std = data_std
 
     net.to(device)
 
@@ -412,7 +419,11 @@ def trainNetwork(net,
                                                                device,
                                                                augment=augment,
                                                                supervised=supervised)
-            loss = lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
+            avg_std = 0.0
+            for single_net in net:
+                avg_std += single_net.std / len(net)
+
+            loss = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
             loss.backward()
             running_loss += loss.item()
             losses.append(loss.item())
@@ -445,7 +456,11 @@ def trainNetwork(net,
                                                                   augment=augment,
                                                                   supervised=supervised)
 
-                loss = lossFunction(outputs, labels, masks, net.std, psf_list, regularization, positivity_constraint)
+                avg_std = 0.0
+                for single_net in net:
+                    avg_std += single_net.std / len(net)
+
+                loss = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
                 losses.append(loss.item())
             net.train(True)
             avgValLoss = np.mean(losses)

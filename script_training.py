@@ -10,6 +10,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
 from tifffile import imread
 
 import deconoising.training as training
@@ -92,13 +93,13 @@ my_val_data = create_dataset(torch.Tensor(X_val[:, None]), psf_list).numpy()
 ####################################################
 #           CREATE AND TRAIN NETWORK
 ####################################################
-net = UNet(1, depth=args.netDepth)
+nets = nn.ModuleList([UNet(1, depth=args.netDepth) for _ in range(len(psf_list))])
 # net.psf = psf_tensor.to(device)
 # Split training and validation data
 with open(os.path.join(workdir, 'config.json'), 'w') as fp:
     json.dump({'psf': [(psf.size, psf.std) for psf in psf_list]}, fp)
 
-trainHist, valHist = training.trainNetwork(net=net,
+trainHist, valHist = training.trainNetwork(net=nets,
                                            trainData=my_train_data,
                                            valData=my_val_data,
                                            workdir=workdir,
