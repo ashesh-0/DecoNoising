@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import git
+
 
 def get_new_model_version(model_dir: str) -> str:
     """
@@ -50,3 +52,12 @@ def get_workdir(config, root_dir, use_max_version):
     cur_workdir = os.path.join(root_dir, rel_path)
     Path(cur_workdir).mkdir(exist_ok=True)
     return cur_workdir
+
+
+def add_git_info(config):
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    repo = git.Repo(dir_path, search_parent_directories=True)
+    config['git_changedFiles'] = [item.a_path for item in repo.index.diff(None)]
+    config['git_branch'] = repo.active_branch.name
+    config['git_untracked_files'] = repo.untracked_files
+    config['git_latest_commit'] = repo.head.object.hexsha

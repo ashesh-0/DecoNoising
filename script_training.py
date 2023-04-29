@@ -17,7 +17,7 @@ import deconoising.training as training
 import deconoising.utils as utils
 from deconoising.synthetic_data_generator import PSFspecify, create_dataset
 from deconoising.training import artificial_psf
-from deconoising.workdir_manager import get_workdir
+from deconoising.workdir_manager import add_git_info, get_workdir
 from unet.model import UNet
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -97,7 +97,9 @@ nets = nn.ModuleList([UNet(1, depth=args.netDepth) for _ in range(len(psf_list))
 # net.psf = psf_tensor.to(device)
 # Split training and validation data
 with open(os.path.join(workdir, 'config.json'), 'w') as fp:
-    json.dump({'psf': [(psf.size, psf.std) for psf in psf_list]}, fp)
+    config = {'psf': [(psf.size, psf.std) for psf in psf_list]}
+    add_git_info(config)
+    json.dump(config, fp)
 
 trainHist, valHist = training.trainNetwork(net=nets,
                                            trainData=my_train_data,
