@@ -305,9 +305,8 @@ def artificial_psf(size_of_psf, std_gauss):
 def trainNetwork(net,
                  trainData,
                  valData,
-                 postfix,
+                 workdir,
                  device,
-                 directory='.',
                  numOfEpochs=200,
                  stepsPerEpoch=50,
                  batchSize=4,
@@ -338,8 +337,6 @@ def trainNetwork(net,
         This identifier is attached to the names of the files that will be saved during training.
     device: 
         The device we are using, e.g. a GPU or CPU
-    directory: string
-        The directory all files will be saved to.
     numOfEpochs: int
         Number of training epochs.
     stepsPerEpoch: int
@@ -425,7 +422,7 @@ def trainNetwork(net,
                            str(2.0 * np.std(losses) / np.sqrt(losses.size)))
             trainHist.append(np.mean(losses))
             losses = []
-            fpath = os.path.join(directory, f"last_{postfix}.net")
+            fpath = os.path.join(workdir, "last_model.net")
             torch.save(net, fpath)
 
             valCounter = 0
@@ -447,12 +444,11 @@ def trainNetwork(net,
             net.train(True)
             avgValLoss = np.mean(losses)
             if len(valHist) == 0 or avgValLoss < np.min(np.array(valHist)):
-                torch.save(net, os.path.join(directory, f"best_{postfix}.net"))
+                torch.save(net, os.path.join(workdir, f"best_model.net"))
             valHist.append(avgValLoss)
             scheduler.step(avgValLoss)
             epoch = (stepCounter / stepsPerEpoch)
-            np.save(os.path.join(directory, f"history_{postfix}.npy"),
-                    (np.array([np.arange(epoch), trainHist, valHist])))
+            np.save(os.path.join(workdir, f"history_model.npy"), (np.array([np.arange(epoch), trainHist, valHist])))
 
     utils.printNow('Finished Training')
     return trainHist, valHist

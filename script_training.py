@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import glob
+import json
 import os
 import random
 import sys
@@ -15,11 +16,13 @@ import deconoising.training as training
 import deconoising.utils as utils
 from deconoising.synthetic_data_generator import PSFspecify, create_dataset
 from deconoising.training import artificial_psf
+from deconoising.workdir_manager import get_workdir
 from unet.model import UNet
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--name", help="name of your network", default='N2V')
 parser.add_argument("--dataPath", help="path to your training data and where network will be stored")
+parser.add_argument("--rootWorkDir", help="directory where network will be stored")
 parser.add_argument("--fileName", help="name of your training data file", default='*.tif')
 parser.add_argument("--validationFraction",
                     help="Fraction of data you want to use for validation (percent)",
@@ -40,6 +43,7 @@ parser.add_argument("--sizePSF", nargs='+', default=[])
 parser.add_argument("--stdPSF", nargs='+', default=[])
 parser.add_argument("--positivityConstraint", help="positivity constraint parameter", default=1.0, type=float)
 parser.add_argument("--meanValue", help="mean value for the background ", default=0.0, type=float)
+parser.add_argument("--use_max_version", default=False, help="Overwrite the max version of the model")
 
 if len(sys.argv) == 1:
     parser.print_help(sys.stderr)
@@ -53,10 +57,17 @@ device = utils.getDevice()
 
 print("args", str(args.name))
 
+sizePSF = [int(x) for x in args.sizePSF]
+stdPSF = [float(x) for x in args.stdPSF]
+psf_list = [PSFspecify(sizePSF[k], stdPSF[k]) for k in range(len(sizePSF))]
+psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
+psf_std = [psf.std for psf in psf_list]
+workdir = get_workdir({'name': args.name, 'psf_list': psf_std}, args.rootWorkDir, args.use_max_version)
+
 ####################################################
 #           PREPARE TRAINING DATA
 ####################################################
-path = args.dataPath
+# path = args.dataPath
 # import pdb;pdb.set_trace()
 fpath = os.path.join(args.dataPath, args.fileName)
 data = []
@@ -68,10 +79,6 @@ X_val = data_dict['X_val']
 ####################################################
 #           PREPARE PSF
 ####################################################
-
-sizePSF = [int(x) for x in args.sizePSF]
-stdPSF = [float(x) for x in args.stdPSF]
-psf_list = [PSFspecify(sizePSF[k], stdPSF[k]) for k in range(len(sizePSF))]
 
 ##################
 # Augment the data
@@ -86,17 +93,13 @@ my_val_data = create_dataset(torch.Tensor(X_val[:, None]), psf_list).numpy()
 net = UNet(1, depth=args.netDepth)
 # net.psf = psf_tensor.to(device)
 # Split training and validation data
+with open(os.path.join(workdir, 'config.json'), 'w') as fp:
+    json.dump({'psf': [(psf.size, psf.std) for psf in psf_list]}, fp)
 
-psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
-# Start training
-timestr = datetime.now().strftime('%Y%m%d_%H.%M')
-mean_psf_std = np.mean([psf.std for psf in psf_list]).round(1)
-postfix = f"{args.name}_N{len(psf_list)}_Avg{mean_psf_std}_{timestr}"
 trainHist, valHist = training.trainNetwork(net=net,
                                            trainData=my_train_data,
                                            valData=my_val_data,
-                                           postfix=postfix,
-                                           directory=path,
+                                           workdir=workdir,
                                            device=device,
                                            numOfEpochs=args.epochs,
                                            patchSize=args.patchSizeXY,
