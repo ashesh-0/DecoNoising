@@ -292,7 +292,7 @@ def lossFunction(samples, labels, masks, std, psf_list, regularization, positivi
     # Similarity constraint
     idx = np.random.randint(samples.shape[1])
     # broadcasting is used here. so there is a warning, but that is alright.
-    multipsf_loss = multipsf_w * torch.sqrt(torch.nn.MSELoss()(samples, samples[:, idx:idx + 1]))
+    multipsf_loss = multipsf_w * torch.sqrt(1e-5 + torch.nn.MSELoss()(samples, samples[:, idx:idx + 1]))
 
     # print(f'N2V:{n2v_loss:.3f} Reg:{reg_loss/std:.3f} PosConst:{pos_constraint_loss/std:.3f} MultiPSF:{multipsf_loss:.3f}')
 
