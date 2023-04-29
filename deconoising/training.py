@@ -247,7 +247,7 @@ def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augm
         samples = samples * stdTorch + meanTorch
         samples_list.append(samples)
 
-    samples = torch.concatenate(samples_list, dim=1)
+    samples = torch.cat(samples_list, dim=1)
     return samples, labels, masks, dataCounter
 
 
