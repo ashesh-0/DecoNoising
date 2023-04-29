@@ -266,7 +266,7 @@ def apply_psf_list(samples, psf_list):
     return conv
 
 
-def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint):
+def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.001):
     assert samples.shape[0] == 1
 
     conv_outputs = []
@@ -279,18 +279,23 @@ def lossFunction(samples, labels, masks, std, psf_list, regularization, positivi
     # This is the implementation of the positivity constraint
     signs = (samples < 0).float()
     samples_positivity_constraint = samples * signs
-
+    pos_constraint_loss = positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint))
     # the N2V loss
     errors = (labels - conv)**2
     loss = torch.sum(errors * masks) / torch.sum(masks)
-
+    n2v_loss = loss / (std**2)
     # TV regularization
     yprior = ((samples[:, :, 2:, 1:-1] - samples[:, :, :-2, 1:-1]) / 2.0)**2
     xprior = ((samples[:, :, 1:-1, 2:] - samples[:, :, 1:-1, :-2]) / 2.0)**2
     reg = torch.sqrt(yprior + xprior + 1e-15)  # total variation
+    reg_loss = torch.mean(reg) * regularization
+    # Similarity constraint
+    idx = np.random.randint(samples.shape[1])
+    multipsf_loss = multipsf_w * torch.sqrt(torch.nn.MSELoss()(samples, samples[:, idx:idx + 1]))
 
-    return loss / (std**2) + (torch.mean(reg) * regularization +
-                              positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint))) / std
+    # print(f'N2V:{n2v_loss:.3f} Reg:{reg_loss/std:.3f} PosConst:{pos_constraint_loss/std:.3f} MultiPSF:{multipsf_loss:.3f}')
+
+    return n2v_loss + (reg_loss + pos_constraint_loss) / std + multipsf_loss
 
 
 def artificial_psf(size_of_psf, std_gauss):
