@@ -11,6 +11,7 @@ from scipy.ndimage import gaussian_filter
 from torch.nn import init
 
 import deconoising.utils as utils
+from deconoising.learnable_gaussian_blur import GaussianLayer
 
 ############################################
 #   Training the network
@@ -270,7 +271,7 @@ def apply_psf_list(samples, psf_list):
     return conv
 
 
-def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.01):
+def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.005):
     assert samples.shape[0] == 1
 
     conv_outputs = []
@@ -312,6 +313,15 @@ def artificial_psf(size_of_psf, std_gauss):
     return filt
 
 
+def generate_psf_kernel_list(psf_count, relative_std, xy_squared_sum, net_0_std, kernel_size):
+    psf_list = []
+    for i in range(psf_count):
+        factor = relative_std[i] / relative_std[0]
+        kernel = GaussianLayer.generate_gaussian_kernel(xy_squared_sum, net_0_std * factor, kernel_size)
+        psf_list.append(kernel)
+    return psf_list
+
+
 def trainNetwork(net,
                  trainData,
                  valData,
@@ -328,6 +338,9 @@ def trainNetwork(net,
                  augment=True,
                  supervised=False,
                  psf_list=None,
+                 psf_learnable=False,
+                 psf_relative_std_list=None,
+                 psf_kernel_size=None,
                  regularization=0.0,
                  positivity_constraint=1.0):
     '''
@@ -381,11 +394,20 @@ def trainNetwork(net,
     valHist: numpy array
         A numpy array containing the avg. validation loss after each epoch.
     '''
+    if psf_learnable:
+        # Create a list of learnable gaussian kernels.
+        assert psf_list is None
+        psf_count = len(psf_relative_std_list)
+        rand_psf_std = np.random.rand() * 10
+        kernel_size = psf_kernel_size
+        net[0].gauss_layer = GaussianLayer(1, kernel_size=kernel_size, pad_type='reflect', std=rand_psf_std)
+        xy_squared_sum = net[0].gauss_layer.xy_squared_sum
+    else:
+        psf_count = len(psf_list)
 
     # Calculate mean and std of data.
     # Everything that is processed by the net will be normalized and denormalized using these numbers.
-    # combined=np.concatenate((trainData,valData))
-    for i in range(len(psf_list)):
+    for i in range(psf_count):
         data_mean = np.mean(trainData[:, i])
         data_std = np.std(trainData[:, i])
         net[i].mean = data_mean
@@ -423,12 +445,18 @@ def trainNetwork(net,
             for single_net in net:
                 avg_std += single_net.std / len(net)
 
+            if psf_learnable:
+                # weights have changed for the gaus_layer and so, kernel needs to be updated everytime.
+                psf_list = generate_psf_kernel_list(psf_count, psf_relative_std_list, xy_squared_sum,
+                                                    net[0].gauss_layer.std, psf_kernel_size)
+
             loss = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
             loss.backward()
             running_loss += loss.item()
             losses.append(loss.item())
 
         optimizer.step()
+        print(net[0].gauss_layer.std)
 
         # We have reached the end of an epoch
         if stepCounter % stepsPerEpoch == stepsPerEpoch - 1:

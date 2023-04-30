@@ -15,6 +15,7 @@ from tifffile import imread
 
 import deconoising.training as training
 import deconoising.utils as utils
+from deconoising.learnable_gaussian_blur import GaussianLayer
 from deconoising.synthetic_data_generator import PSFspecify, create_dataset
 from deconoising.training import artificial_psf
 from deconoising.workdir_manager import add_git_info, get_workdir
@@ -29,6 +30,10 @@ parser.add_argument("--validationFraction",
                     help="Fraction of data you want to use for validation (percent)",
                     default=30.0,
                     type=float)
+parser.add_argument("--learnable_psf",
+                    default=True,
+                    type=bool,
+                    help='This is used to create a learnable gaussian with which one deconvolves')
 parser.add_argument("--patchSizeXY", help="XY-size of your training patches", default=100, type=int)
 parser.add_argument("--epochs", help="number of training epochs", default=200, type=int)
 parser.add_argument("--stepsPerEpoch", help="number training steps per epoch", default=10, type=int)
@@ -61,7 +66,7 @@ print("args", str(args.name))
 sizePSF = [int(x) for x in args.sizePSF]
 stdPSF = [float(x) for x in args.stdPSF]
 psf_list = [PSFspecify(sizePSF[k], stdPSF[k]) for k in range(len(sizePSF))]
-psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
+psf_tensor_list = None if args.learnable_psf else [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
 psf_std = [psf.std for psf in psf_list]
 workdir = get_workdir({'name': args.name, 'psf_list': psf_std}, args.rootWorkDir, args.use_max_version)
 print('')
@@ -113,4 +118,7 @@ trainHist, valHist = training.trainNetwork(net=nets,
                                            batchSize=args.batchSize,
                                            learningRate=1e-3,
                                            psf_list=psf_tensor_list,
+                                           psf_learnable=args.learnable_psf,
+                                           psf_relative_std_list=[psf.std / psf_list[0].std for psf in psf_list],
+                                           psf_kernel_size=psf_list[0].size,
                                            positivity_constraint=args.positivityConstraint)

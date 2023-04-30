@@ -28,8 +28,8 @@ class GaussianLayer(nn.Module):
         self.kernel_size = kernel_size
         self.stride = stride
 
-        #         self.register_buffer("xy_squared_sum", self._generate_grid(kernel_size, input_channels))
-        self.xy_squared_sum = nn.Parameter(self._generate_grid(kernel_size, input_channels), requires_grad=False)
+        #         self.register_buffer("xy_squared_sum", self.generate_grid(kernel_size, input_channels))
+        self.xy_squared_sum = nn.Parameter(self.generate_grid(kernel_size, input_channels), requires_grad=False)
         #         self.register_parameter("std", nn.Parameter(torch.tensor(1.)))
         self.std = nn.Parameter(torch.tensor(std or 1).type(torch.float), requires_grad=not fixed_std)
 
@@ -45,12 +45,12 @@ class GaussianLayer(nn.Module):
         """
         return F.conv2d(F.pad(
             x, [self.kernel_size // 2, self.kernel_size // 2, self.kernel_size // 2, self.kernel_size // 2], 'reflect'),
-                        self.generate_gaussian(),
+                        self._generate_gaussian(),
                         stride=self.stride,
                         groups=self.input_channels)
 
     @staticmethod
-    def _generate_grid(kernel_size: int, channels: int) -> torch.Tensor:
+    def generate_grid(kernel_size: int, channels: int) -> torch.Tensor:
         """
         This function creates the coordinates of (x, y) for generating Gaussian filters
         :param kernel_size: the size of the square kernel
@@ -64,13 +64,21 @@ class GaussianLayer(nn.Module):
         # for computation
         return (xv**2 + yv**2) / 2
 
-    def generate_gaussian(self):
+    @staticmethod
+    def generate_gaussian_kernel(xy_squared_sum, std, kernel_size, input_channels=1):
         """
         This function generates the Gaussian filter based on the standard deviation
         :return: the new Gaussian filter
         """
-        kernel = torch.exp(-self.xy_squared_sum / self.std**2)
+        kernel = torch.exp(-xy_squared_sum / std**2)
 
         #         kernel = torch.einsum("ijk, i->ijk", [kernel, (torch.tensor(1.) / kernel.sum(-1).sum(-1))]) This does not work with xla
-        kernel = kernel / kernel.sum() * self.input_channels
-        return kernel.view(self.input_channels, 1, self.kernel_size, self.kernel_size)
+        kernel = kernel / kernel.sum() * input_channels
+        return kernel.view(input_channels, 1, kernel_size, kernel_size)
+
+    def _generate_gaussian(self):
+        """
+        This function generates the Gaussian filter based on the standard deviation
+        :return: the new Gaussian filter
+        """
+        return self.generate_gaussian_kernel(self.xy_squared_sum, self.std, self.kernel_size, self.input_channels)
