@@ -332,6 +332,7 @@ def trainNetwork(net,
                  batchSize=4,
                  patchSize=100,
                  learningRate=0.0001,
+                 lr_scheduler_patience=10,
                  numMaskedPixels=100 * 100 / 32.0,
                  virtualBatchSize=20,
                  valSize=20,
@@ -416,7 +417,11 @@ def trainNetwork(net,
     net.to(device)
 
     optimizer = optim.Adam(net.parameters(), lr=learningRate)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.5, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+                                                     'min',
+                                                     patience=lr_scheduler_patience,
+                                                     factor=0.5,
+                                                     verbose=True)
 
     running_loss = 0.0
     stepCounter = 0

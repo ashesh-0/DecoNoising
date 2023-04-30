@@ -41,6 +41,7 @@ parser.add_argument("--batchSize", help="size of your training batches", default
 parser.add_argument("--virtualBatchSize", help="size of virtual batch", default=20, type=int)
 parser.add_argument("--netDepth", help="depth of your U-Net", default=3, type=int)
 parser.add_argument("--learningRate", help="initial learning rate", default=1e-3, type=float)
+parser.add_argument("--lr_scheduler_patience", help="learning rate scheduler patience", default=50, type=int)
 parser.add_argument("--netKernelSize", help="size of conv. kernels in first layer", default=3, type=int)
 parser.add_argument("--unet_n_first", help="number of feature channels in the first u-net layer", default=64, type=int)
 # parser.add_argument("--sizePSF", help="size of psf in pix, odd number", default=81, type=int)
@@ -117,6 +118,7 @@ trainHist, valHist = training.trainNetwork(net=nets,
                                            virtualBatchSize=20,
                                            batchSize=args.batchSize,
                                            learningRate=1e-3,
+                                           lr_scheduler_patience=args.lr_scheduler_patience,
                                            psf_list=psf_tensor_list,
                                            psf_learnable=args.learnable_psf,
                                            psf_relative_std_list=[psf.std / psf_list[0].std for psf in psf_list],
