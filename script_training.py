@@ -15,7 +15,6 @@ from tifffile import imread
 
 import deconoising.training as training
 import deconoising.utils as utils
-from deconoising.learnable_gaussian_blur import GaussianLayer
 from deconoising.synthetic_data_generator import PSFspecify, create_dataset
 from deconoising.training import artificial_psf
 from deconoising.workdir_manager import add_git_info, get_workdir
