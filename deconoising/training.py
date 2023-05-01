@@ -399,7 +399,7 @@ def trainNetwork(net,
         # Create a list of learnable gaussian kernels.
         assert psf_list is None
         psf_count = len(psf_relative_std_list)
-        rand_psf_std = np.random.rand() * 10
+        rand_psf_std = np.random.rand() * 2.5
         kernel_size = psf_kernel_size
         net[0].gauss_layer = GaussianLayer(1, kernel_size=kernel_size, pad_type='reflect', std=rand_psf_std)
         xy_squared_sum = net[0].gauss_layer.xy_squared_sum
