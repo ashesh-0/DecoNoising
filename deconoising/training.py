@@ -284,7 +284,7 @@ def lossFunction(samples, labels, masks, std, psf_list, regularization, positivi
     # This is the implementation of the positivity constraint
     signs = (samples < 0).float()
     samples_positivity_constraint = samples * signs
-    pos_constraint_loss = positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint))
+    pos_constraint_loss = positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint)) / std
     # the N2V loss
     errors = (labels - conv)**2
     loss = torch.sum(errors * masks) / torch.sum(masks)
@@ -293,15 +293,15 @@ def lossFunction(samples, labels, masks, std, psf_list, regularization, positivi
     yprior = ((samples[:, :, 2:, 1:-1] - samples[:, :, :-2, 1:-1]) / 2.0)**2
     xprior = ((samples[:, :, 1:-1, 2:] - samples[:, :, 1:-1, :-2]) / 2.0)**2
     reg = torch.sqrt(yprior + xprior + 1e-15)  # total variation
-    reg_loss = torch.mean(reg) * regularization
+    reg_loss = torch.mean(reg) * regularization / std
     # Similarity constraint
     idx = np.random.randint(samples.shape[1])
     # broadcasting is used here. so there is a warning, but that is alright.
     multipsf_loss = multipsf_w * torch.sqrt(1e-5 + torch.nn.MSELoss()(samples, samples[:, idx:idx + 1]))
 
     # print(f'N2V:{n2v_loss:.3f} Reg:{reg_loss/std:.3f} PosConst:{pos_constraint_loss/std:.3f} MultiPSF:{multipsf_loss:.3f}')
-
-    return n2v_loss + (reg_loss + pos_constraint_loss) / std + multipsf_loss
+    net_loss = n2v_loss + reg_loss + pos_constraint_loss + multipsf_loss
+    return {'net_loss': net_loss, 'multipsf_loss': multipsf_loss, 'n2v_loss': n2v_loss}
 
 
 def artificial_psf(size_of_psf, std_gauss):
@@ -432,6 +432,9 @@ def trainNetwork(net,
 
     while stepCounter / stepsPerEpoch < numOfEpochs:  # loop over the dataset multiple times
         losses = []
+        n2v_losses = []
+        multi_psf_losses = []
+        stdev_outputs = []
         optimizer.zero_grad()
         stepCounter += 1
 
@@ -455,21 +458,26 @@ def trainNetwork(net,
                 psf_list = generate_psf_kernel_list(psf_count, psf_relative_std_list, xy_squared_sum,
                                                     net[0].gauss_layer.std, psf_kernel_size)
 
-            loss = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
-            loss.backward()
-            running_loss += loss.item()
-            losses.append(loss.item())
+            stdev_outputs += [outputs[:, i].std().item() for i in range(outputs.shape[1])]
+            loss_dict = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
+            loss_dict['net_loss'].backward()
+            running_loss += loss_dict['net_loss'].item()
+            losses.append(loss_dict['net_loss'].item())
+            n2v_losses.append(loss_dict['n2v_loss'].item())
+            multi_psf_losses.append(loss_dict['multipsf_loss'].item())
 
         optimizer.step()
-        print(net[0].gauss_layer.std)
 
         # We have reached the end of an epoch
         if stepCounter % stepsPerEpoch == stepsPerEpoch - 1:
             running_loss = (np.mean(losses))
             losses = np.array(losses)
-            utils.printNow("Epoch " + str(int(stepCounter / stepsPerEpoch)) + " finished")
-            utils.printNow("avg. loss: " + str(np.mean(losses)) + "+-(2SEM)" +
-                           str(2.0 * np.std(losses) / np.sqrt(losses.size)))
+            utils.printNow("Epoch " + str(int(stepCounter / stepsPerEpoch)) +
+                           f" finished. Current std: {net[0].gauss_layer.std.item():.3f}")
+            utils.printNow(
+                f"avg. loss: {np.mean(losses):.3f} +-(2SEM) {2.0 * np.std(losses) / np.sqrt(losses.size):.3f}",
+                f'n2v:{np.mean(n2v_losses):.3f} multipsf:{np.mean(multi_psf_losses):.3f}, stdev:{np.mean(stdev_outputs):.2f}'
+            )
             trainHist.append(np.mean(losses))
             losses = []
             fpath = os.path.join(workdir, "last_model.net")
@@ -493,8 +501,9 @@ def trainNetwork(net,
                 for single_net in net:
                     avg_std += single_net.std / len(net)
 
-                loss = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
-                losses.append(loss.item())
+                loss_dict = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization,
+                                         positivity_constraint)
+                losses.append(loss_dict['n2v_loss'].item())
             net.train(True)
             avgValLoss = np.mean(losses)
             if len(valHist) == 0 or avgValLoss < np.min(np.array(valHist)):
