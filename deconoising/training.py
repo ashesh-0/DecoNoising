@@ -1,4 +1,6 @@
 import os
+import socket
+import wandb
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +11,8 @@ import torch.optim as optim
 import torchvision
 from scipy.ndimage import gaussian_filter
 from torch.nn import init
+from pytorch_lightning.loggers import WandbLogger
+
 
 import deconoising.utils as utils
 from deconoising.learnable_gaussian_blur import GaussianLayer
@@ -175,6 +179,22 @@ def randomCrop(img, size, numPix, imgClean=None, augment=True, manipulate=True):
 
     return imgOut, imgOutC, mask
 
+def predict_for_one_img(img, net):
+    inp = torch.Tensor(img[:, None]).cuda()
+    psf_count = len(net)
+    samples = []
+    for psf_idx in range(psf_count):
+        # Move normalization parameter to GPU
+        stdTorch = torch.Tensor(np.array(net[psf_idx].std)).cuda()
+        meanTorch = torch.Tensor(np.array(net[psf_idx].mean)).cuda()
+
+        # Forward step
+        output = net[psf_idx]((inp[psf_idx:psf_idx + 1] - meanTorch) /
+                               stdTorch) * 10.0  #We found that this factor can speed up training
+
+        output = output * stdTorch + meanTorch
+        samples.append(output[0].detach().cpu().numpy())
+    return np.concatenate(samples, axis=0)
 
 def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augment=True, supervised=True):
     '''
@@ -395,6 +415,11 @@ def trainNetwork(net,
     valHist: numpy array
         A numpy array containing the avg. validation loss after each epoch.
     '''
+    exptname = '/'.join(workdir.strip('/').split('/')[-3:])
+    hostname = socket.gethostname()
+    logger = WandbLogger(name=os.path.join(hostname, exptname),
+                         save_dir=workdir,
+                         project="Multi-PSF-Deconoising")
     if psf_learnable:
         # Create a list of learnable gaussian kernels.
         assert psf_list is None
@@ -429,6 +454,7 @@ def trainNetwork(net,
 
     trainHist = []
     valHist = []
+
 
     while stepCounter / stepsPerEpoch < numOfEpochs:  # loop over the dataset multiple times
         losses = []
@@ -472,12 +498,18 @@ def trainNetwork(net,
         if stepCounter % stepsPerEpoch == stepsPerEpoch - 1:
             running_loss = (np.mean(losses))
             losses = np.array(losses)
+            logged_std = net[0].gauss_layer.std.item()
             utils.printNow("Epoch " + str(int(stepCounter / stepsPerEpoch)) +
-                           f" finished. Current std: {net[0].gauss_layer.std.item():.3f}")
+                           f" finished. Current std: {logged_std:.3f}")
             utils.printNow(
                 f"avg. loss: {np.mean(losses):.3f} +-(2SEM) {2.0 * np.std(losses) / np.sqrt(losses.size):.3f}",
                 f'n2v:{np.mean(n2v_losses):.3f} multipsf:{np.mean(multi_psf_losses):.3f}, stdev:{np.mean(stdev_outputs):.2f}'
             )
+            wandb.log({'std': logged_std})
+            wandb.log({'loss': np.mean(losses)})
+            wandb.log({'n2vloss': np.mean(n2v_losses)})
+            wandb.log({'multipsf': np.mean(multi_psf_losses)})
+            
             trainHist.append(np.mean(losses))
             losses = []
             fpath = os.path.join(workdir, "last_model.net")
@@ -485,7 +517,10 @@ def trainNetwork(net,
 
             valCounter = 0
             net.train(False)
-            losses = []
+            val_losses = []
+            val_n2v_losses = []
+            val_multipsf_losses = []
+
             for i in range(valSize):
                 outputs, labels, masks, valCounter = trainingPred(valData,
                                                                   net,
@@ -503,11 +538,34 @@ def trainNetwork(net,
 
                 loss_dict = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization,
                                          positivity_constraint)
-                losses.append(loss_dict['n2v_loss'].item())
+                val_losses.append(loss_dict['net_loss'].item())
+                val_n2v_losses.append(loss_dict['n2v_loss'].item())
+                val_multipsf_losses.append(loss_dict['multipsf_loss'].item())
+
             net.train(True)
-            avgValLoss = np.mean(losses)
+            avgValLoss = np.mean(val_losses)
+            avgValn2vLoss = np.mean(val_n2v_losses)
+            avgValMultiPsfLoss = np.mean(val_multipsf_losses)
+
             if len(valHist) == 0 or avgValLoss < np.min(np.array(valHist)):
                 torch.save(net, os.path.join(workdir, f"best_model.net"))
+            
+            wandb.log({'ValLoss':avgValLoss,'Valn2vLoss':avgValn2vLoss,'ValMultiPsfLoss':avgValMultiPsfLoss})
+            if ((1+stepCounter) / stepsPerEpoch) %5 == 0:
+                inp =valData[0,...,:64,:64]
+                deconvolved_imgs = predict_for_one_img(inp, net)
+                for i in range(len(deconvolved_imgs)):
+                    deco_image = wandb.Image(
+                        deconvolved_imgs[i,...,None], 
+                        caption=""
+                    )
+
+                    wandb.log({f"DecoImgs_{i}": deco_image})
+                inp_log = wandb.Image(inp[0,...,None], caption='Input_0')
+                wandb.log({'Input_0':inp_log})
+                      
+            # convolved_img = None
+            
             valHist.append(avgValLoss)
             scheduler.step(avgValLoss)
             epoch = (stepCounter / stepsPerEpoch)
