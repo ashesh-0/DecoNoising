@@ -30,11 +30,14 @@ class PSFspecify:
         self.size = size
         self.std = std
 
-def create_dataset(images, psf_specification_list):
+def create_dataset(images, psf_specification_list, pixel_independent_gaussian_noise_std = None):
     diff_psf_outputs = []
     for psf_specification in psf_specification_list:
         psf = artificial_psf(psf_specification.size, psf_specification.std)
         output_images = convolve_with_psf(images,psf)
+        if pixel_independent_gaussian_noise_std:
+            output_images=output_images + (pixel_independent_gaussian_noise_std**0.5)*torch.randn(*output_images.shape)
+        
         assert output_images.shape[1] ==1
         diff_psf_outputs.append(output_images)
     
