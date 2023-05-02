@@ -551,19 +551,8 @@ def trainNetwork(net,
                 torch.save(net, os.path.join(workdir, f"best_model.net"))
             
             wandb.log({'ValLoss':avgValLoss,'Valn2vLoss':avgValn2vLoss,'ValMultiPsfLoss':avgValMultiPsfLoss})
-            if ((1+stepCounter) / stepsPerEpoch) %5 == 0:
-                inp =valData[0,...,:64,:64]
-                deconvolved_imgs = predict_for_one_img(inp, net)
-                for i in range(len(deconvolved_imgs)):
-                    deco_image = wandb.Image(
-                        deconvolved_imgs[i,...,None], 
-                        caption=""
-                    )
-
-                    wandb.log({f"DecoImgs_{i}": deco_image})
-                inp_log = wandb.Image(inp[0,...,None], caption='Input_0')
-                wandb.log({'Input_0':inp_log})
-                      
+            if ((1+stepCounter) / stepsPerEpoch) %20 == 0:
+                log_imgs(valData, net)                
             # convolved_img = None
             
             valHist.append(avgValLoss)
@@ -573,3 +562,16 @@ def trainNetwork(net,
 
     utils.printNow('Finished Training')
     return trainHist, valHist
+
+def log_imgs(valData, net):
+    inp =valData[0,...,:64,:64]
+    deconvolved_imgs = predict_for_one_img(inp, net)
+    for i in range(len(deconvolved_imgs)):
+        deco_image = wandb.Image(
+            deconvolved_imgs[i,...,None], 
+            caption=""
+        )
+
+        wandb.log({f"DecoImgs_{i}": deco_image})
+    inp_log = wandb.Image(inp[0,...,None], caption='Input_0')
+    wandb.log({'Input_0':inp_log})
