@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""
+Example run: 
+python script_training.py --dataPath=/home/ubuntu/ashesh/data/Flywing/Flywing_n10/train/ --fileName=train_data.npz 
+--rootWorkDir=/home/ubuntu/ashesh/training/deconoising/ --batchSize=4 --sizePSF 81 81 81 81 --stdPSF 3 3 3 3 --epochs=1000 --lr_scheduler_patience=50
+"""
 import argparse
 import glob
 import json
@@ -99,8 +104,7 @@ my_val_data = create_dataset(torch.Tensor(X_val[:, None]), psf_list).numpy()
 #           CREATE AND TRAIN NETWORK
 ####################################################
 nets = nn.ModuleList([UNet(1, depth=args.netDepth) for _ in range(len(psf_list))])
-# net.psf = psf_tensor.to(device)
-# Split training and validation data
+
 with open(os.path.join(workdir, 'config.json'), 'w') as fp:
     config = {'psf': [(psf.size, psf.std) for psf in psf_list]}
     add_git_info(config)

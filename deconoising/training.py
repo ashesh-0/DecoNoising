@@ -426,6 +426,7 @@ def trainNetwork(net,
         psf_count = len(psf_relative_std_list)
         rand_psf_std = 2.5  #np.random.rand() * 8
         kernel_size = psf_kernel_size
+        # only one gauss_layer is learnable. For other nets, the blur kernel is relative to this.
         net[0].gauss_layer = GaussianLayer(1, kernel_size=kernel_size, pad_type='reflect', std=rand_psf_std)
         xy_squared_sum = net[0].gauss_layer.xy_squared_sum
     else:
