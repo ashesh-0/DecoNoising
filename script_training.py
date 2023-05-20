@@ -9,6 +9,7 @@ import glob
 import json
 import os
 import random
+import socket
 import sys
 from datetime import datetime
 
@@ -20,6 +21,7 @@ from tifffile import imread
 
 import deconoising.training as training
 import deconoising.utils as utils
+import wandb
 from deconoising.synthetic_data_generator import PSFspecify, create_dataset
 from deconoising.training import artificial_psf
 from deconoising.workdir_manager import add_git_info, get_workdir
@@ -121,6 +123,10 @@ with open(os.path.join(workdir, 'config.json'), 'w') as fp:
     config = {'psf': [(psf.size, psf.std) for psf in psf_list]}
     add_git_info(config)
     json.dump(config, fp)
+
+exptname = '/'.join(workdir.strip('/').split('/')[-3:])
+hostname = socket.gethostname()
+wandb.init(name=os.path.join(hostname, exptname), dir=workdir, project="Multi-PSF-Deconoising", config=args)
 
 trainHist, valHist = training.trainNetwork(net=nets,
                                            trainData=my_train_data,
