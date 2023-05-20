@@ -292,7 +292,7 @@ def apply_psf_list(samples, psf_list):
     return conv
 
 
-def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.005):
+def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.5):
     assert samples.shape[0] == 1
 
     conv_outputs = []
@@ -364,6 +364,7 @@ def trainNetwork(net,
                  psf_relative_std_list=None,
                  psf_kernel_size=None,
                  regularization=0.0,
+                 multipsf_loss_w=0.1,
                  positivity_constraint=1.0):
     '''
     Train a network using 
@@ -485,7 +486,14 @@ def trainNetwork(net,
                                                     net[0].gauss_layer.std, psf_kernel_size)
 
             stdev_outputs += [outputs[:, i].std().item() for i in range(outputs.shape[1])]
-            loss_dict = lossFunction(outputs, labels, masks, avg_std, psf_list, regularization, positivity_constraint)
+            loss_dict = lossFunction(outputs,
+                                     labels,
+                                     masks,
+                                     avg_std,
+                                     psf_list,
+                                     regularization,
+                                     positivity_constraint,
+                                     multipsf_w=multipsf_loss_w)
             loss_dict['net_loss'].backward()
             running_loss += loss_dict['net_loss'].item()
             losses.append(loss_dict['net_loss'].item())

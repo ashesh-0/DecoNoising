@@ -35,6 +35,7 @@ def create_dataset(images, psf_specification_list, pixel_independent_gaussian_no
     """
     images are convolved with each psf present in the psf_specification_list.
     """
+    print('Create dataset, with noise:', pixel_independent_gaussian_noise_std)
     diff_psf_outputs = []
     for psf_specification in psf_specification_list:
         psf = artificial_psf(psf_specification.size, psf_specification.std)

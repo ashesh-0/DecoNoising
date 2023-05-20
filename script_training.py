@@ -50,6 +50,9 @@ parser.add_argument("--netKernelSize", help="size of conv. kernels in first laye
 parser.add_argument("--unet_n_first", help="number of feature channels in the first u-net layer", default=64, type=int)
 # parser.add_argument("--sizePSF", help="size of psf in pix, odd number", default=81, type=int)
 parser.add_argument("--sizePSF", nargs='+', default=[])
+parser.add_argument("--noiseStd", help="stdev of noise which is added to input", default=None, type=float)
+parser.add_argument("--multipsf_loss_w", help="stdev of noise which is added to input", default=0.01, type=float)
+
 # parser.add_argument("--stdPSF", help="size of std of gauss for psf", default=1.0, type=float)
 parser.add_argument("--stdPSF", nargs='+', default=[])
 parser.add_argument("--positivityConstraint", help="positivity constraint parameter", default=1.0, type=float)
@@ -74,6 +77,7 @@ psf_list = [PSFspecify(sizePSF[k], stdPSF[k]) for k in range(len(sizePSF))]
 psf_tensor_list = None if args.learnable_psf else [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
 psf_std = [psf.std for psf in psf_list]
 workdir = get_workdir({'name': args.name, 'psf_list': psf_std}, args.rootWorkDir, args.use_max_version)
+pixel_independent_gaussian_noise_std = args.noiseStd
 print('')
 print('Saving model & config to', workdir)
 print('')
@@ -97,7 +101,9 @@ X_val = data_dict['X_val']
 # Augment the data
 ##################
 # data = torch.Tensor(data[:,None])
-my_train_data = create_dataset(torch.Tensor(X_train[:, None]), psf_list).numpy()
+my_train_data = create_dataset(torch.Tensor(X_train[:, None]),
+                               psf_list,
+                               pixel_independent_gaussian_noise_std=pixel_independent_gaussian_noise_std).numpy()
 my_val_data = create_dataset(torch.Tensor(X_val[:, None]), psf_list).numpy()
 
 ####################################################
@@ -126,4 +132,5 @@ trainHist, valHist = training.trainNetwork(net=nets,
                                            psf_learnable=args.learnable_psf,
                                            psf_relative_std_list=[psf.std / psf_list[0].std for psf in psf_list],
                                            psf_kernel_size=psf_list[0].size,
+                                           multipsf_loss_w=args.multipsf_loss_w,
                                            positivity_constraint=args.positivityConstraint)
