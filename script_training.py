@@ -38,6 +38,12 @@ parser.add_argument("--learnable_psf",
                     default=True,
                     type=bool,
                     help='This is used to create a learnable gaussian with which one deconvolves')
+
+parser.add_argument("--learnable_psf_init_std",
+                    default=None,
+                    type=float,
+                    help='This is the value of the stdev() of the psf you initialize with.')
+
 parser.add_argument("--patchSizeXY", help="XY-size of your training patches", default=100, type=int)
 parser.add_argument("--epochs", help="number of training epochs", default=200, type=int)
 parser.add_argument("--stepsPerEpoch", help="number training steps per epoch", default=10, type=int)
@@ -130,6 +136,7 @@ trainHist, valHist = training.trainNetwork(net=nets,
                                            lr_scheduler_patience=args.lr_scheduler_patience,
                                            psf_list=psf_tensor_list,
                                            psf_learnable=args.learnable_psf,
+                                           psf_learnable_init_std=args.learnable_psf_init_std,
                                            psf_relative_std_list=[psf.std / psf_list[0].std for psf in psf_list],
                                            psf_kernel_size=psf_list[0].size,
                                            multipsf_loss_w=args.multipsf_loss_w,

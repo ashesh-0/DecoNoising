@@ -361,6 +361,7 @@ def trainNetwork(net,
                  supervised=False,
                  psf_list=None,
                  psf_learnable=False,
+                 psf_learnable_init_std=None,
                  psf_relative_std_list=None,
                  psf_kernel_size=None,
                  regularization=0.0,
@@ -425,7 +426,13 @@ def trainNetwork(net,
         # Create a list of learnable gaussian kernels.
         assert psf_list is None
         psf_count = len(psf_relative_std_list)
-        rand_psf_std = 2.5  #np.random.rand() * 8
+
+        if psf_learnable_init_std is None:
+            rand_psf_std = np.random.rand() * 10
+        else:
+            rand_psf_std = psf_learnable_init_std
+
+        print('Learnable psf starting with: ', rand_psf_std)
         kernel_size = psf_kernel_size
         # only one gauss_layer is learnable. For other nets, the blur kernel is relative to this.
         net[0].gauss_layer = GaussianLayer(1, kernel_size=kernel_size, pad_type='reflect', std=rand_psf_std)
