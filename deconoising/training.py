@@ -1,6 +1,5 @@
 import os
 import socket
-import wandb
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,12 +8,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
+from pytorch_lightning.loggers import WandbLogger
 from scipy.ndimage import gaussian_filter
 from torch.nn import init
-from pytorch_lightning.loggers import WandbLogger
-
 
 import deconoising.utils as utils
+import wandb
 from deconoising.learnable_gaussian_blur import GaussianLayer
 
 ############################################
@@ -179,6 +178,7 @@ def randomCrop(img, size, numPix, imgClean=None, augment=True, manipulate=True):
 
     return imgOut, imgOutC, mask
 
+
 def predict_for_one_img(img, net):
     inp = torch.Tensor(img[:, None]).cuda()
     psf_count = len(net)
@@ -189,12 +189,13 @@ def predict_for_one_img(img, net):
         meanTorch = torch.Tensor(np.array(net[psf_idx].mean)).cuda()
 
         # Forward step
-        output = net[psf_idx]((inp[psf_idx:psf_idx + 1] - meanTorch) /
-                               stdTorch) * 10.0  #We found that this factor can speed up training
+        output = net[psf_idx](
+            (inp[psf_idx:psf_idx + 1] - meanTorch) / stdTorch) * 10.0  #We found that this factor can speed up training
 
         output = output * stdTorch + meanTorch
         samples.append(output[0].detach().cpu().numpy())
     return np.concatenate(samples, axis=0)
+
 
 def trainingPred(my_train_data, net, dataCounter, size, bs, numPix, device, augment=True, supervised=True):
     '''
@@ -415,11 +416,10 @@ def trainNetwork(net,
     valHist: numpy array
         A numpy array containing the avg. validation loss after each epoch.
     '''
+    wandb.init()
     exptname = '/'.join(workdir.strip('/').split('/')[-3:])
     hostname = socket.gethostname()
-    logger = WandbLogger(name=os.path.join(hostname, exptname),
-                         save_dir=workdir,
-                         project="Multi-PSF-Deconoising")
+    logger = WandbLogger(name=os.path.join(hostname, exptname), save_dir=workdir, project="Multi-PSF-Deconoising")
     if psf_learnable:
         # Create a list of learnable gaussian kernels.
         assert psf_list is None
@@ -454,7 +454,6 @@ def trainNetwork(net,
 
     trainHist = []
     valHist = []
-
 
     while stepCounter / stepsPerEpoch < numOfEpochs:  # loop over the dataset multiple times
         losses = []
@@ -509,7 +508,7 @@ def trainNetwork(net,
             wandb.log({'loss': np.mean(losses)})
             wandb.log({'n2vloss': np.mean(n2v_losses)})
             wandb.log({'multipsf': np.mean(multi_psf_losses)})
-            
+
             trainHist.append(np.mean(losses))
             losses = []
             fpath = os.path.join(workdir, "last_model.net")
@@ -549,12 +548,12 @@ def trainNetwork(net,
 
             if len(valHist) == 0 or avgValLoss < np.min(np.array(valHist)):
                 torch.save(net, os.path.join(workdir, f"best_model.net"))
-            
-            wandb.log({'ValLoss':avgValLoss,'Valn2vLoss':avgValn2vLoss,'ValMultiPsfLoss':avgValMultiPsfLoss})
-            if ((1+stepCounter) / stepsPerEpoch) %20 == 0:
-                log_imgs(valData, net)                
+
+            wandb.log({'ValLoss': avgValLoss, 'Valn2vLoss': avgValn2vLoss, 'ValMultiPsfLoss': avgValMultiPsfLoss})
+            if ((1 + stepCounter) / stepsPerEpoch) % 20 == 0:
+                log_imgs(valData, net)
             # convolved_img = None
-            
+
             valHist.append(avgValLoss)
             scheduler.step(avgValLoss)
             epoch = (stepCounter / stepsPerEpoch)
@@ -563,15 +562,13 @@ def trainNetwork(net,
     utils.printNow('Finished Training')
     return trainHist, valHist
 
+
 def log_imgs(valData, net):
-    inp =valData[0,...,:64,:64]
+    inp = valData[0, ..., :64, :64]
     deconvolved_imgs = predict_for_one_img(inp, net)
     for i in range(len(deconvolved_imgs)):
-        deco_image = wandb.Image(
-            deconvolved_imgs[i,...,None], 
-            caption=""
-        )
+        deco_image = wandb.Image(deconvolved_imgs[i, ..., None], caption="")
 
         wandb.log({f"DecoImgs_{i}": deco_image})
-    inp_log = wandb.Image(inp[0,...,None], caption='Input_0')
-    wandb.log({'Input_0':inp_log})
+    inp_log = wandb.Image(inp[0, ..., None], caption='Input_0')
+    wandb.log({'Input_0': inp_log})
