@@ -417,9 +417,9 @@ def trainNetwork(net,
     valHist: numpy array
         A numpy array containing the avg. validation loss after each epoch.
     '''
-    # wandb.init()
     exptname = '/'.join(workdir.strip('/').split('/')[-3:])
     hostname = socket.gethostname()
+    wandb.init(name=os.path.join(hostname, exptname), dir=workdir, project="Multi-PSF-Deconoising")
     logger = WandbLogger(name=os.path.join(hostname, exptname), save_dir=workdir, project="Multi-PSF-Deconoising")
     if psf_learnable:
         # Create a list of learnable gaussian kernels.
