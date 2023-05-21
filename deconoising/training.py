@@ -292,7 +292,15 @@ def apply_psf_list(samples, psf_list):
     return conv
 
 
-def lossFunction(samples, labels, masks, std, psf_list, regularization, positivity_constraint, multipsf_w=0.5):
+def lossFunction(samples,
+                 labels,
+                 masks,
+                 std,
+                 psf_list,
+                 regularization,
+                 positivity_constraint,
+                 multipsf_w=0.5,
+                 enable_full_recons_loss=False):
     assert samples.shape[0] == 1
 
     conv_outputs = []
@@ -308,6 +316,9 @@ def lossFunction(samples, labels, masks, std, psf_list, regularization, positivi
     pos_constraint_loss = positivity_constraint * torch.mean(torch.abs(samples_positivity_constraint)) / std
     # the N2V loss
     errors = (labels - conv)**2
+    if enable_full_recons_loss:
+        masks = torch.ones_like(masks)
+
     loss = torch.sum(errors * masks) / torch.sum(masks)
     n2v_loss = loss / (std**2)
     # TV regularization
@@ -366,7 +377,8 @@ def trainNetwork(net,
                  psf_kernel_size=None,
                  regularization=0.0,
                  multipsf_loss_w=0.1,
-                 positivity_constraint=1.0):
+                 positivity_constraint=1.0,
+                 enable_full_recons_loss=False):
     '''
     Train a network using 
     
@@ -496,7 +508,8 @@ def trainNetwork(net,
                                      psf_list,
                                      regularization,
                                      positivity_constraint,
-                                     multipsf_w=multipsf_loss_w)
+                                     multipsf_w=multipsf_loss_w,
+                                     enable_full_recons_loss=enable_full_recons_loss)
             loss_dict['net_loss'].backward()
             running_loss += loss_dict['net_loss'].item()
             losses.append(loss_dict['net_loss'].item())

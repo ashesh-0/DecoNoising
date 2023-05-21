@@ -40,6 +40,10 @@ parser.add_argument("--learnable_psf",
                     action='store_true',
                     help='This is used to create a learnable gaussian with which one deconvolves')
 
+parser.add_argument("--enable_full_recons_loss",
+                    action='store_true',
+                    help='With this option, n2v loss is replaced by plain and simple full reconstruction loss')
+
 parser.add_argument("--learnable_psf_init_std",
                     default=None,
                     type=float,
@@ -160,4 +164,5 @@ trainHist, valHist = training.trainNetwork(net=nets,
                                            psf_relative_std_list=[psf.std / psf_list[0].std for psf in psf_list],
                                            psf_kernel_size=psf_list[0].size,
                                            multipsf_loss_w=args.multipsf_loss_w,
-                                           positivity_constraint=args.positivityConstraint)
+                                           positivity_constraint=args.positivityConstraint,
+                                           enable_full_recons_loss=args.enable_full_recons_loss)
