@@ -37,11 +37,15 @@ parser.add_argument("--validationFraction",
                     default=30.0,
                     type=float)
 parser.add_argument("--learnable_psf",
-                    default=True,
-                    type=bool,
+                    action='store_true',
                     help='This is used to create a learnable gaussian with which one deconvolves')
 
 parser.add_argument("--learnable_psf_init_std",
+                    default=None,
+                    type=float,
+                    help='This is the value of the stdev() of the psf you initialize with.')
+
+parser.add_argument("--train_with_different_psf",
                     default=None,
                     type=float,
                     help='This is the value of the stdev() of the psf you initialize with.')
@@ -82,7 +86,17 @@ print("args", str(args.name))
 sizePSF = [int(x) for x in args.sizePSF]
 stdPSF = [float(x) for x in args.stdPSF]
 psf_list = [PSFspecify(sizePSF[k], stdPSF[k]) for k in range(len(sizePSF))]
-psf_tensor_list = None if args.learnable_psf else [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
+
+# get psf_tensor_list. This is used inside the models. This is not used for data generation.
+if args.learnable_psf == True:
+    psf_tensor_list = None
+elif args.train_with_different_psf is not None:
+    factor = args.train_with_different_psf / psf_list[0].std
+    psf_tensor_list = [artificial_psf(psf.size, psf.std * factor).to(device) for psf in psf_list]
+    print('Model working with a fixed psf set having factor difference of ', factor)
+else:
+    psf_tensor_list = [artificial_psf(psf.size, psf.std).to(device) for psf in psf_list]
+
 psf_std = [psf.std for psf in psf_list]
 workdir = get_workdir({'name': args.name, 'psf_list': psf_std}, args.rootWorkDir, args.use_max_version)
 pixel_independent_gaussian_noise_std = args.noiseStd

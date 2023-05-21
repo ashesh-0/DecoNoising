@@ -509,14 +509,15 @@ def trainNetwork(net,
         if stepCounter % stepsPerEpoch == stepsPerEpoch - 1:
             running_loss = (np.mean(losses))
             losses = np.array(losses)
-            logged_std = net[0].gauss_layer.std.item()
-            utils.printNow("Epoch " + str(int(stepCounter / stepsPerEpoch)) +
-                           f" finished. Current std: {logged_std:.3f}")
             utils.printNow(
                 f"avg. loss: {np.mean(losses):.3f} +-(2SEM) {2.0 * np.std(losses) / np.sqrt(losses.size):.3f}",
                 f'n2v:{np.mean(n2v_losses):.3f} multipsf:{np.mean(multi_psf_losses):.3f}, stdev:{np.mean(stdev_outputs):.2f}'
             )
-            wandb.log({'std': logged_std})
+            if getattr(net[0], 'gauss_layer', None) is not None:
+                logged_std = net[0].gauss_layer.std.item()
+                utils.printNow("Epoch " + str(int(stepCounter / stepsPerEpoch)) +
+                               f" finished. Current std: {logged_std:.3f}")
+                wandb.log({'std': logged_std})
             wandb.log({'loss': np.mean(losses)})
             wandb.log({'n2vloss': np.mean(n2v_losses)})
             wandb.log({'multipsf': np.mean(multi_psf_losses)})
